@@ -91,6 +91,19 @@ class api_leitura {
 		return array_values(array_unique($m[1] ?? []));
 	}
 
+	/** Destinos do tenant, com o aviso de XML faltando -- que é o que separa
+	 *  destino vivo de destino que aparece na tela e nunca é usado. */
+	public static function destinos(string $domain_uuid): array {
+		return self::db()->select(
+			"select d.destination_number, d.destination_enabled, d.destination_description, "
+			."p.dialplan_name, coalesce(length(p.dialplan_xml), 0) as xml_bytes "
+			."from v_destinations d "
+			."left join v_dialplans p on p.dialplan_uuid = d.dialplan_uuid "
+			."where d.domain_uuid = :u order by d.destination_number",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+	}
+
 	public static function troncos(string $domain_uuid): array {
 		$db = self::db();
 		$linhas = $db->select(

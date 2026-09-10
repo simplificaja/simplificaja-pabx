@@ -732,7 +732,7 @@ git commit -am "feat(api): criacao de tronco por numero"
 
 ---
 
-### Tarefa 6: `POST /destinos`
+### Tarefa 6: `POST /destinos` — FEITA
 
 O endpoint que a validação provou ser possível. Segue exatamente
 `exemplos/criar-destino.php`.

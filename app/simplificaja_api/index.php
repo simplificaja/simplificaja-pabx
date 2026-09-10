@@ -13,6 +13,7 @@
 	require __DIR__ . "/resources/classes/api_saude.php";
 	require __DIR__ . "/resources/classes/api_ramal.php";
 	require __DIR__ . "/resources/classes/api_tronco.php";
+	require __DIR__ . "/resources/classes/api_destino.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -77,6 +78,17 @@
 			$nome = trim((string) ($_GET['nome'] ?? ''));
 			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
 			responde(api_tronco::remover($domain_uuid, $nome));
+
+		case 'GET destinos':
+			responde(api_leitura::destinos($domain_uuid));
+
+		case 'POST destinos':
+			responde(api_destino::criar($domain_uuid, corpo()), 201);
+
+		case 'DELETE destinos':
+			$numero = trim((string) ($_GET['numero'] ?? ''));
+			if ($numero === '') { responde(['erro' => 'numero é obrigatório'], 422); }
+			responde(api_destino::remover($domain_uuid, $numero));
 
 		default:
 			responde(['erro' => "rota desconhecida: $metodo $rota"], 404);
