@@ -11,6 +11,7 @@ scripts que fazem o FusionPBX servir o SimplificaJá.
 | Pasta | O quê |
 |---|---|
 | `scripts/chatwoot_hangup.lua` | gancho de desligamento que manda a chamada para o Chatwoot |
+| `scripts/instalar.sh` | instala um FusionPBX já personalizado numa VM limpa |
 | `scripts/gerar-audios.sh` | gera os áudios da URA em português |
 | `scripts/aplicar-configuracao.sql` | as configurações que diferem do padrão |
 | `docs/armadilhas.md` | o que parece certo na tela e não funciona |
@@ -30,60 +31,31 @@ instala por cópia; a árvore do upstream fica intocada, e atualizar é `git pul
 Forkar transformaria cada correção de segurança deles em merge nosso, para
 sempre, sem ganho nenhum.
 
-## Reinstalar do zero
+## Instalar numa VM nova
 
-1. **Instalar o FusionPBX** pelo instalador oficial. Em Ubuntu 24 o FreeSWITCH é
-   compilado, e o instalador tem um defeito conhecido: ele instala
-   `libpcre3-dev`, mas o FreeSWITCH 1.10 exige `libpcre2-dev`. O `configure`
-   aborta, nada compila, e mesmo assim a saída diz "Installation has completed".
+```bash
+# 1. instalador oficial do FusionPBX (Ubuntu 24)
+wget -O - https://raw.githubusercontent.com/fusionpbx/fusionpbx-install.sh/master/debian/pre-install.sh | sh
+cd /usr/src/fusionpbx-install.sh/debian && ./install.sh
 
-   ```
-   apt install libpcre2-dev
-   ```
+# 2. nossa personalização
+git clone <este repositorio> /opt/pabx && cd /opt/pabx
+DOMINIO=pabx.simplificaja.com.br \
+CHATWOOT_URL=https://app.simplificaja.com.br/webhooks/fusionpbx \
+CHATWOOT_SECRET=o-segredo-real \
+./scripts/instalar.sh
+```
 
-   O `mod_spandsp` também falha ao compilar (a spandsp do git mudou a API na
-   v18). Desabilitar o módulo — perde-se fax T.38, que não usamos.
+O `instalar.sh` faz o resto: corrige a dependência que o instalador oficial
+erra, carrega o `mod_curl`, instala nosso app, o gancho de desligamento e os
+áudios, aplica as configurações e limpa o cache. Pode rodar de novo — cada etapa
+verifica antes de agir.
 
-2. **Carregar o `mod_curl`** e deixá-lo no autoload. O gancho de desligamento
-   depende dele, porque esta instalação não tem luasocket:
+**Nenhum segredo mora no repositório**: tudo entra por variável de ambiente.
 
-   ```
-   fs_cli -x "load mod_curl"
-   # e acrescentar <load module="mod_curl"/> em
-   # /etc/freeswitch/autoload_configs/modules.conf.xml
-   ```
-
-3. **Aplicar as configurações:**
-
-   ```
-   su - postgres -c 'psql -d fusionpbx -f aplicar-configuracao.sql'
-   ```
-
-4. **Instalar o gancho:**
-
-   ```
-   cp scripts/chatwoot_hangup.lua /usr/share/freeswitch/scripts/
-   # substituir CHATWOOT_URL e CHATWOOT_SECRET pelos valores reais
-   ```
-
-   Registrar no plano de discagem **global** (contexto `global`, depois do
-   `call-direction`, com `continue` ligado):
-
-   ```
-   set  api_hangup_hook=lua chatwoot_hangup.lua
-   ```
-
-5. **Gerar os áudios:**
-
-   ```
-   ./scripts/gerar-audios.sh
-   ```
-
-6. **Limpar o cache** — sem isto nada do que foi mudado tem efeito:
-
-   ```
-   rm -rf /var/cache/fusionpbx/* && fs_cli -x reloadxml
-   ```
+**Ele não traz dados.** Domínios, ramais e clientes não vêm junto — isto instala
+o PABX personalizado, não uma cópia do servidor antigo. Recriar clientes é
+provisionamento, que é o papel do app da API.
 
 ## O que ainda precisa ser feito à mão
 
