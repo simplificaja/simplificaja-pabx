@@ -249,7 +249,9 @@ class api_leitura {
 			." from v_extensions where domain_uuid = :u order by extension",
 			['u' => $domain_uuid], 'all') ?? [];
 
-		$registrados = self::registrados();
+		$dominio = $database->select("select domain_name from v_domains "
+			." where domain_uuid = :u", ['u' => $domain_uuid], 'column');
+		$registrados = self::registrados($dominio);
 		foreach ($linhas as &$l) {
 			$l['registrado'] = in_array($l['extension'], $registrados, true);
 		}
@@ -257,11 +259,16 @@ class api_leitura {
 	}
 
 	// Quem está registrado agora, direto do FreeSWITCH.
-	private static function registrados(): array {
+	//
+	// Casa por `user@dominio`, NUNCA só pelo número: o `sofia status ... reg`
+	// devolve os registros de TODOS os domínios do servidor, e número de ramal
+	// se repete entre clientes. Casar só pelo número mostraria o 1001 do
+	// cliente A como registrado porque o 1001 do cliente B está.
+	private static function registrados(string $dominio): array {
 		$esl = event_socket::create();
 		if (!$esl) { return []; }
 		$saida = event_socket::api('sofia status profile internal reg');
-		preg_match_all('/Auth-User:\s+(\S+)/', $saida, $m);
+		preg_match_all('/User:\s+(\S+)@' . preg_quote($dominio, '/') . '/', $saida, $m);
 		return $m[1] ?? [];
 	}
 
@@ -318,6 +325,11 @@ ssh root@109.123.250.200 "fs_cli -x 'sofia status gateway fbbe29c7-5af6-4ed4-9f5
 Criar uma chave para um segundo domínio de teste e conferir que ela **não**
 enxerga os ramais do primeiro. Se enxergar, parar tudo: é o defeito que não pode
 existir.
+
+E o caso específico que quase passou: criar o **mesmo número de ramal** nos dois
+domínios (`1001` em ambos), registrar só o de um, e conferir que o outro aparece
+como **não registrado**. Número de ramal se repete entre clientes, e casar só
+pelo número faria um cliente ver o estado do outro.
 
 - [ ] **Passo 5: commit**
 
@@ -948,6 +960,33 @@ ssh root@109.123.250.200 "su - postgres -c \"psql -d fusionpbx -c \\\"
   delete from v_domains where domain_name = 'teste-api.pabx.simplificaja.com.br';\\\"\""
 git commit -am "feat(api): criacao de dominio de cliente"
 ```
+
+---
+
+## O que é do tenant e o que é do servidor
+
+Toda **escrita de dado** é escopada: ramal, tronco, destino e plano de discagem
+carregam o `domain_uuid` que veio da chave. Um tenant não alcança o outro.
+
+Mas quatro superfícies são **do servidor inteiro**, e quem for executar precisa
+saber disso:
+
+| Superfície | Por que é global | Consequência |
+|---|---|---|
+| Lista `providers` | ACL do FreeSWITCH não tem domínio | liberar o IP da operadora de um cliente libera para todos |
+| `reloadxml` / `rescan` | comandos de instância | tocam todos os tenants; o rescan pode balançar o registro de troncos alheios |
+| `auth-calls` do perfil externo | perfil SIP é do servidor | a checagem em `/saude` avalia o servidor, não o cliente |
+| Contexto `public` | compartilhado por todos os domínios | `dialplan->xml()` com `is_empty` regenera XML faltante de outros tenants também |
+
+Nenhuma delas mistura **dados** entre clientes — o `dialplan->xml()` regenera
+cada linha a partir do domínio dela própria. Mas são efeitos que atravessam
+tenants, e por isso:
+
+- **Nunca chamar `sofia profile external restart`** num fluxo de provisionamento:
+  derruba o tronco de todo mundo. `rescan` basta e é bem menos invasivo.
+- **Consultas ao FreeSWITCH filtram por domínio na resposta**, porque o comando
+  não aceita filtro. É o caso do `registrados()` acima, e vale para qualquer
+  leitura futura de `sofia status`.
 
 ---
 
