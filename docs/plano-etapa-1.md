@@ -32,7 +32,7 @@ dele e escreve pelas classes dele. Nunca por SQL.
 
 ---
 
-### Tarefa 1: Esqueleto do app e autenticação
+### Tarefa 1: Esqueleto do app e autenticação — FEITA
 
 Sem isto nenhum endpoint existe. Entrega: um `GET` autenticado respondendo.
 
@@ -65,7 +65,15 @@ Gerar o uuid com `php -r 'echo uuid();'` dentro do FusionPBX, ou `uuidgen`.
 - [ ] **Passo 2: a chave por domínio**
 
 A chave mora como `default_setting` do domínio, categoria `simplificaja`,
-subcategoria `api_key`. Criar a do domínio de teste:
+subcategoria `api_key`. Gerar fora do banco — o `gen_random_bytes` do Postgres
+exige a extensão `pgcrypto`, que não está instalada e não vale instalar por
+isto:
+
+```bash
+CHAVE=$(ssh root@109.123.250.200 "openssl rand -hex 24")
+```
+
+Depois inserir, no domínio de teste:
 
 ```bash
 ssh root@109.123.250.200
@@ -137,8 +145,14 @@ require __DIR__ . "/resources/classes/api_auth.php";
 header('Content-Type: application/json; charset=utf-8');
 
 $domain_uuid = api_auth::domain_uuid();
-$rota   = trim($_SERVER['PATH_INFO'] ?? '', '/');
 $metodo = $_SERVER['REQUEST_METHOD'];
+
+// A rota vem por parâmetro. O nginx do FusionPBX casa `location ~ \.php$`,
+// com o `$` ancorando no fim, então /index.php/ping devolve 404 sem chegar no
+// PHP. Acrescentar um bloco no nginx resolveria, mas viraria edição obrigatória
+// de nginx em toda instalação -- e é onde se derruba o painel do PABX.
+$rota = trim($_SERVER['PATH_INFO'] ?? '', '/');
+if ($rota === '') { $rota = trim($_GET['r'] ?? '', '/'); }
 
 function responde($dados, int $codigo = 200): void {
 	http_response_code($codigo);
@@ -164,8 +178,8 @@ ssh root@109.123.250.200 "chown -R www-data:www-data /var/www/fusionpbx/app/simp
 Com a chave certa:
 
 ```bash
-curl -s https://pabx.simplificaja.com.br/app/simplificaja_api/index.php/ping \
-  -H "X-Api-Key: A_CHAVE"
+API=https://pabx.simplificaja.com.br/app/simplificaja_api/index.php
+curl -s "$API?r=ping" -H "X-Api-Key: A_CHAVE"
 ```
 
 Esperado: `{"ok":true,"domain_uuid":"54c66587-..."}`
@@ -173,11 +187,8 @@ Esperado: `{"ok":true,"domain_uuid":"54c66587-..."}`
 Sem chave e com chave errada:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" \
-  https://pabx.simplificaja.com.br/app/simplificaja_api/index.php/ping
-curl -s -o /dev/null -w "%{http_code}\n" \
-  https://pabx.simplificaja.com.br/app/simplificaja_api/index.php/ping \
-  -H "X-Api-Key: errada"
+curl -s -o /dev/null -w "%{http_code}\n" "$API?r=ping"
+curl -s -o /dev/null -w "%{http_code}\n" "$API?r=ping" -H "X-Api-Key: errada"
 ```
 
 Esperado: `401` nos dois.
