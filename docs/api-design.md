@@ -128,10 +128,53 @@ errada não aparece em lugar nenhum.
 | `POST` | `/troncos` | gateway com usuário, senha e host do número |
 | `POST` | `/grupos` | grupo de toque ou fila |
 
-**Fora do escopo:** URA e gravações. Dependem de gerenciamento de áudio — subir,
-ouvir antes de publicar, converter formato — que é uma funcionalidade inteira e
-não uma chamada de API. Até lá, URA se configura na tela e o app só a referencia
-como destino.
+### Áudio e fluxos
+
+| Método | Caminho | Faz |
+|---|---|---|
+| `POST` | `/gravacoes` | sobe um WAV ou MP3, converte e publica |
+| `GET` | `/gravacoes` | lista as disponíveis no domínio |
+| `DELETE` | `/gravacoes/{nome}` | remove |
+| `POST` | `/uras` | cria a URA com saudação e opções |
+| `PUT` | `/uras/{ramal}` | muda saudação ou opções |
+| `POST` | `/fluxos` | encadeia número → URA → fila/grupo |
+
+**Estavam fora do escopo na primeira versão desta spec, por engano.** A exclusão
+veio da spec do telefone, onde o argumento era sobre o *cliente* se autoatender
+— e ali continua valendo. Mas este app serve o **painel de administração**, cujo
+propósito é justamente eliminar a configuração manual de cliente novo. Deixar
+URA e gravações de fora derrota o propósito.
+
+O gerenciamento de áudio aqui é mínimo de propósito: **subir, converter, listar,
+apagar**. Sem gravar pelo navegador, sem edição. O `sox` já está no servidor e
+faz a conversão para 8 kHz mono 16 bits, que é o formato que o FreeSWITCH toca
+sem reamostrar.
+
+Detalhe que não é óbvio: o app de gravações do FusionPBX grava o arquivo em
+disco **e** guarda o conteúdo em `recording_base64`
+(`recordings/recording_edit.php:269`). O base64 é o que a tela usa para tocar o
+áudio. Salvar só o arquivo produz uma gravação que funciona na chamada e não
+toca no painel — mais uma falha silenciosa a evitar.
+
+---
+
+## Etapas
+
+De parte em parte, na ordem em que cada uma elimina trabalho manual:
+
+**Etapa 1 — o cliente atende.** `/dominio`, `/ramais`, `/troncos`, `/destinos`
+apontando direto para um grupo, e `/saude`. Ao fim dela, um cliente novo com
+telefone simples é criado pelo nosso painel, sem abrir o FusionPBX.
+
+A verificação entra já na primeira etapa apesar de não criar nada: é ela que
+transforma "criei e parece certo" em "criei e funciona", e é barata por ser só
+leitura.
+
+**Etapa 2 — o atendimento é estruturado.** `/gravacoes`, `/uras` e `/fluxos`.
+Sai o telefone que toca em todo mundo, entra a URA com opções caindo em filas.
+
+**Etapa 3 — o que sobrar.** Rotação de chave, remoção de cliente, o que a
+operação mostrar que falta.
 
 ---
 
