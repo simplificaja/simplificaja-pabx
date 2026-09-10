@@ -67,16 +67,18 @@ a que a suíte de verificação precisa cobrir primeiro.
 O `dialplan_xml` de **destinos** é gerado dentro de `destination_edit.php`, um
 arquivo de página, não numa classe. Não dá para chamar de fora.
 
-Duas saídas, e a escolha importa:
+Duas saídas eram possíveis: reproduzir a lógica no app — que funcionaria hoje e
+divergiria em silêncio na primeira atualização do upstream — ou montar as linhas
+e chamar `dialplan->xml()`, que é código de classe e portanto estável.
 
-- **Reproduzir a lógica no app** — funciona hoje, e diverge silenciosamente na
-  primeira atualização do upstream. É como se cria o próximo bug de madrugada.
-- **Montar as linhas e chamar `dialplan->xml()`** com `source=details`, que é
-  código de classe e portanto estável.
+**A segunda foi confirmada na prática**, não por leitura de código. Um teste
+criou `v_dialplans` + `v_dialplan_details` + `v_destinations` por
+`database->save()`, chamou `dialplan->xml()` com `context = 'public'`, e o
+`dialplan_xml` nasceu com 519 bytes. O script está em
+`docs/exemplos/criar-destino.php` e limpa o que cria.
 
-Adotar a segunda. Onde o formato exigido pelo destino não sair disso, o endpoint
-**falha explicitamente** em vez de gravar pela metade — configuração pela metade
-é justamente o que não se pode enxergar.
+Ou seja: **não é preciso duplicar nada do `destination_edit.php`.** O ponto que
+parecia o maior risco do desenho não é risco.
 
 ---
 
@@ -212,6 +214,4 @@ respondendo certo, nada funcionando.
 - Definir o formato dos padrões aplicados em `POST /dominio` (a "receita" de
   `2026-09-10-provisionamento-multi-tenant-design.md` no repositório do
   Chatwoot).
-- Confirmar se `destinations` consegue ser criado por `dialplan->xml()` ou se
-  precisa de outra saída.
 - Rotação da chave por domínio.
