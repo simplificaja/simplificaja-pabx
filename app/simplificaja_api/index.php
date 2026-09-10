@@ -14,6 +14,7 @@
 	require __DIR__ . "/resources/classes/api_ramal.php";
 	require __DIR__ . "/resources/classes/api_tronco.php";
 	require __DIR__ . "/resources/classes/api_destino.php";
+	require __DIR__ . "/resources/classes/api_dominio.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -26,8 +27,20 @@
 		exit;
 	}
 
-	$domain_uuid = api_auth::domain_uuid();
 	$metodo = $_SERVER['REQUEST_METHOD'];
+	$rota_pedida = trim($_SERVER['PATH_INFO'] ?? '', '/');
+	if ($rota_pedida === '') { $rota_pedida = trim($_GET['r'] ?? '', '/'); }
+
+	// As rotas de domínio criam ou apagam o tenant, então não têm domínio de
+	// onde tirar escopo: usam a chave de instância. Todo o resto é escopado
+	// pela chave do domínio.
+	if ($rota_pedida === 'dominio' && in_array($metodo, ['POST', 'DELETE'], true)) {
+		api_auth::exigir_admin();
+		$domain_uuid = null;
+	}
+	else {
+		$domain_uuid = api_auth::domain_uuid();
+	}
 
 	/** Corpo JSON da requisição, ou lista vazia. */
 	function corpo(): array {
@@ -41,10 +54,7 @@
 	// mas isso viraria edição obrigatória de nginx em toda instalação nova, e é
 	// onde se derruba o painel inteiro do PABX. PATH_INFO continua aceito para
 	// quem tiver o nginx preparado.
-	$rota = trim($_SERVER['PATH_INFO'] ?? '', '/');
-	if ($rota === '') {
-		$rota = trim($_GET['r'] ?? '', '/');
-	}
+	$rota = $rota_pedida;
 
 	switch ("$metodo $rota") {
 
@@ -78,6 +88,12 @@
 			$nome = trim((string) ($_GET['nome'] ?? ''));
 			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
 			responde(api_tronco::remover($domain_uuid, $nome));
+
+		case 'POST dominio':
+			responde(api_dominio::criar(corpo()), 201);
+
+		case 'DELETE dominio':
+			responde(api_dominio::remover(corpo()));
 
 		case 'GET destinos':
 			responde(api_leitura::destinos($domain_uuid));

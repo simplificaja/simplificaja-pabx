@@ -43,6 +43,30 @@ class api_auth {
 		self::recusa();
 	}
 
+	/**
+	 * Exige a chave de INSTÂNCIA, que cria domínios e portanto não pode ser
+	 * escopada. Vale por todos os clientes -- é a joia da coroa.
+	 */
+	public static function exigir_admin(): void {
+		$enviada = $_SERVER['HTTP_X_API_KEY'] ?? '';
+		if ($enviada === '') {
+			self::recusa();
+		}
+
+		$database = database::new(['db' => $GLOBALS['db'] ?? null]);
+		$chave = $database->select(
+			"select default_setting_value from v_default_settings "
+			."where default_setting_category = :categoria "
+			."and default_setting_subcategory = 'admin_key' "
+			."and default_setting_enabled = true",
+			['categoria' => self::CATEGORIA], 'column'
+		);
+
+		if (empty($chave) || !hash_equals((string) $chave, $enviada)) {
+			self::recusa();
+		}
+	}
+
 	private static function recusa(): void {
 		http_response_code(401);
 		header('Content-Type: application/json; charset=utf-8');

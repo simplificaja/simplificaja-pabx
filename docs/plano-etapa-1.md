@@ -878,7 +878,7 @@ git commit -am "feat(api): criacao de destino com XML gerado"
 
 ---
 
-### Tarefa 7: `POST /dominio`
+### Tarefa 7: `POST /dominio` — FEITA
 
 Deixada por último de propósito: é a mais complexa, e as tarefas anteriores
 foram testadas contra o domínio que já existe. Agora que cada peça funciona,
@@ -1006,11 +1006,25 @@ tenants, e por isso:
 
 ---
 
-## Ao terminar
+## Ao terminar — CUMPRIDA em 10/09/2026
 
 A Etapa 1 está cumprida quando um domínio criado pela API, com ramal, tronco e
 destino criados pela API, responde `tudo_certo: true` no `/saude` — e o ramal
 registra de verdade no FreeSWITCH.
+
+**Verificado:** o domínio `clienteteste.pabx.simplificaja.com.br` foi criado
+pela API com ramal `2001`, tronco `operadora` e destino `1140028922`. As seis
+checagens passaram, o tronco registrou de verdade na operadora, e os dois
+tenants não se enxergaram. Depois o cliente foi removido pela API e o tenant de
+produção seguiu intacto.
+
+O que a execução acrescentou além do plano:
+
+- `DELETE` para ramal, tronco, destino e domínio — sem eles não dava para testar
+  sem sujar o PABX, e criar sem apagar é meia funcionalidade.
+- `GET /destinos`, que a tela de verificação vai consumir.
+- Limite de 2 chamadas simultâneas por ramal e senha de 20 caracteres.
+- Sexta checagem no `/saude`: ramais com senha curta ou vazia.
 
 Aí o painel do SimplificaJá tem contra o que falar, e a Etapa 2 (gravações, URA
 e fluxos) passa a fazer sentido.
