@@ -30,6 +30,17 @@ qualquer outra coisa. Todas custaram horas na validação de 09-10/09/2026.
 6. **Cache:** `rm -rf /var/cache/fusionpbx/*` depois de qualquer mudança de
    plano de discagem, senão o XML antigo continua valendo.
 
+   O mesmo vale para **troncos**: a configuração do sofia, com os gateways, é
+   servida do cache. Tronco criado que não aparece nem como falhando no
+   `sofia status`? Falta apagar a chave `<hostname>:configuration:sofia.conf`.
+   Mesma classe do item 1 -- existe no banco, aparece na tela, invisível para o
+   FreeSWITCH.
+
+   Em código, a classe `cache` é de **instância**:
+   `$cache = new cache(); $cache->delete(...)`. Chamar `cache::delete()`
+   estaticamente é erro fatal -- e o dado já foi gravado quando o fatal
+   acontece, então a escrita passa e só a resposta morre.
+
 7. **O servidor está no fuso europeu.** Os logs saem 5 horas à frente de
    Brasília — ajustar antes de produção, senão investigar incidente vira conta
    de cabeça.
