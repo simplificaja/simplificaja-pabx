@@ -14,12 +14,21 @@ scripts que fazem o FusionPBX servir o SimplificaJá.
 | `scripts/gerar-audios.sh` | gera os áudios da URA em português |
 | `scripts/aplicar-configuracao.sql` | as configurações que diferem do padrão |
 | `docs/armadilhas.md` | o que parece certo na tela e não funciona |
-| `api/` | a API PHP que o painel do SimplificaJá consome (a construir) |
+| `app/simplificaja_api/` | app do FusionPBX com a API que o painel consome (a construir) |
+| `patches/` | alterações no upstream, se um dia forem inevitáveis |
 
 ## Servidor atual
 
 `109.123.250.200` — Ubuntu 24, FusionPBX com FreeSWITCH 1.10 compilado do
 código. Domínio `pabx.simplificaja.com.br`.
+
+**Versão do FusionPBX:** branch `5.5`, upstream
+`github.com/fusionpbx/fusionpbx`, validado no commit `087fc2b98`.
+
+**Não forkamos o FusionPBX.** O que é nosso vive em `app/simplificaja_api/` e
+instala por cópia; a árvore do upstream fica intocada, e atualizar é `git pull`.
+Forkar transformaria cada correção de segurança deles em merge nosso, para
+sempre, sem ganho nenhum.
 
 ## Reinstalar do zero
 
@@ -87,7 +96,8 @@ Pelas telas do FusionPBX, porque criar no banco **não funciona** (ver
 - Destinos dos números (Dialplan → Destinations, nunca Inbound Routes cru)
 - Gateway de cada número
 
-É exatamente esta lista que a API em `api/` existe para eliminar.
+É exatamente esta lista que o app em `app/simplificaja_api/` existe para
+eliminar.
 
 ## Estado conhecido, para não assustar
 
