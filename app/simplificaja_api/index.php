@@ -10,6 +10,7 @@
 	require dirname(__DIR__, 2) . "/resources/require.php";
 	require __DIR__ . "/resources/classes/api_auth.php";
 	require __DIR__ . "/resources/classes/api_leitura.php";
+	require __DIR__ . "/resources/classes/api_saude.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -49,6 +50,9 @@
 
 		case 'GET troncos':
 			responde(api_leitura::troncos($domain_uuid));
+
+		case 'GET saude':
+			responde(api_saude::verificar($domain_uuid));
 
 		default:
 			responde(['erro' => "rota desconhecida: $metodo $rota"], 404);

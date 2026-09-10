@@ -352,7 +352,7 @@ git commit -am "feat(api): leitura de dominio, ramais e troncos"
 
 ---
 
-### Tarefa 3: `/saude` — as checagens que pegam falha silenciosa
+### Tarefa 3: `/saude` — as checagens que pegam falha silenciosa — FEITA
 
 A tarefa que mais se paga. Cada checagem corresponde a uma falha real de
 `armadilhas.md`, com o sintoma que ela produz.
@@ -426,6 +426,9 @@ class api_saude {
 
 		return ['tudo_certo' => !in_array(false, array_column($r, 'ok'), true),
 		        'checagens'  => $r];
+		// Nota da execução: as checagens 1 e 2 contam só rotas ATIVAS. Rota
+		// desabilitada não é servida, então não é problema -- e sinalizar o que
+		// não afeta ninguém ensina a ignorar a verificação.
 	}
 }
 ```
