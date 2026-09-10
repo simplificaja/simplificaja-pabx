@@ -11,6 +11,7 @@
 	require __DIR__ . "/resources/classes/api_auth.php";
 	require __DIR__ . "/resources/classes/api_leitura.php";
 	require __DIR__ . "/resources/classes/api_saude.php";
+	require __DIR__ . "/resources/classes/api_ramal.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -25,6 +26,12 @@
 
 	$domain_uuid = api_auth::domain_uuid();
 	$metodo = $_SERVER['REQUEST_METHOD'];
+
+	/** Corpo JSON da requisição, ou lista vazia. */
+	function corpo(): array {
+		$bruto = file_get_contents('php://input');
+		return json_decode($bruto, true) ?? [];
+	}
 
 	// A rota vem por parâmetro, não por caminho. O nginx do FusionPBX casa
 	// `location ~ \.php$` -- com o `$` ancorando no fim -- então /index.php/ping
@@ -53,6 +60,14 @@
 
 		case 'GET saude':
 			responde(api_saude::verificar($domain_uuid));
+
+		case 'POST ramais':
+			responde(api_ramal::criar($domain_uuid, corpo()), 201);
+
+		case 'DELETE ramais':
+			$numero = trim((string) ($_GET['extension'] ?? ''));
+			if ($numero === '') { responde(['erro' => 'extension é obrigatório'], 422); }
+			responde(api_ramal::remover($domain_uuid, $numero));
 
 		default:
 			responde(['erro' => "rota desconhecida: $metodo $rota"], 404);
