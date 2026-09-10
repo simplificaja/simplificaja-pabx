@@ -180,6 +180,58 @@ operação mostrar que falta.
 
 ---
 
+## Isolamento entre clientes — o que auditar sempre
+
+Auditado em 10/09/2026. Duas falhas encontradas, registradas aqui para não
+voltarem.
+
+### Nunca aceitar identificador global vindo do cliente
+
+O seletor "Ligar de" implementado no softphone manda
+`X-Caller-Id-Channel: <id do Channel::Voice>` — **um id de sequência global do
+Chatwoot**. Quem controla o navegador controla esse cabeçalho e pode mandar o id
+de outro tenant.
+
+Hoje não causa dano porque o plano de discagem roda no contexto do domínio do
+próprio cliente e não acharia gateway alheio. Mas isso é sorte de implementação,
+não desenho — e o plano de discagem de saída ainda vai ser escrito.
+
+**Regra:** o navegador manda o **número**, não um id. O plano de discagem casa o
+número contra os gateways do próprio domínio, que é escopado por construção.
+Corrigir no `sipVoiceClient.js` quando a saída por gateway for implementada.
+
+### O segredo do webhook precisa ser por domínio
+
+O `FUSIONPBX_WEBHOOK_SECRET` é único para a instalação, e o
+`Voice::CallRegistrationService` deriva a conta do `sip_domain` que vem no corpo.
+Quem tiver o segredo escreve em qualquer tenant.
+
+Não é um cliente escapando para outro pela tela — é raio de alcance se o PABX
+for comprometido, e o PABX tem IP público. Na instalação, a primeira varredura
+chegou 13 minutos depois.
+
+**Correção:** um segredo por domínio, guardado junto da chave de API, e o gancho
+Lua mandando o do domínio dele. Aí um PABX comprometido alcança os tenants
+daquele PABX, não a instalação inteira.
+
+### A chave de instância é a joia da coroa
+
+A chave do `POST /dominio` cria domínio, portanto não pode ser escopada. Ela vale
+por todos os clientes. Guardar fora do repositório, restringir por IP no nginx, e
+rotacionar se houver qualquer suspeita.
+
+### O que já está certo, e por quê
+
+- **Escopo sai da chave**, nunca do corpo — o único caminho possível de
+  vazamento pela API está fechado por construção.
+- **Consultas ao FreeSWITCH filtram por `usuario@dominio`**, não por número:
+  número de ramal se repete entre clientes.
+- **`Channel::Voice` tem unicidade por conta**, não global: duas empresas podem
+  legitimamente cadastrar o mesmo número, e índice global vazaria a existência
+  de um cliente para o outro.
+
+---
+
 ## Erros
 
 Um PABX mal configurado falha em silêncio; a API não pode.
