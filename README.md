@@ -15,6 +15,7 @@ scripts que fazem o FusionPBX servir o SimplificaJá.
 | `scripts/gerar-audios.sh` | gera os áudios da URA em português |
 | `scripts/aplicar-configuracao.sql` | as configurações que diferem do padrão |
 | `docs/armadilhas.md` | o que parece certo na tela e não funciona |
+| `docs/api-design.md` | desenho do app da API: padrão de escrita, endpoints, autenticação |
 | `app/simplificaja_api/` | app do FusionPBX com a API que o painel consome (a construir) |
 | `patches/` | alterações no upstream, se um dia forem inevitáveis |
 
