@@ -216,7 +216,7 @@ git commit -m "feat(api): esqueleto do app e autenticacao por chave de dominio"
 
 ---
 
-### Tarefa 2: Leituras de domínio, ramais e troncos
+### Tarefa 2: Leituras de domínio, ramais e troncos — FEITA
 
 O painel precisa mostrar antes de mudar. E são baratas: só leitura.
 
@@ -289,11 +289,13 @@ class api_leitura {
 			." from v_gateways where domain_uuid = :u order by gateway",
 			['u' => $domain_uuid], 'all') ?? [];
 
+		// O `sofia status` identifica o gateway pelo UUID, NÃO pelo nome:
+		//   external::fbbe29c7-...	gateway	sip:75681@177.11.50.217	REGED
+		// Casar pelo nome ('algar') nunca encontra nada.
 		$saida = event_socket::api('sofia status') ?: '';
 		foreach ($linhas as &$l) {
-			// REGED aparece na linha do gateway quando ele está registrado
 			$l['registrado'] = (bool) preg_match(
-				'/' . preg_quote($l['gateway'], '/') . '\s+.*REGED/', $saida);
+				'/::' . preg_quote($l['gateway_uuid'], '/') . '\s.*\bREGED\b/', $saida);
 		}
 		return $linhas;
 	}

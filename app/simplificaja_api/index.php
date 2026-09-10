@@ -9,6 +9,7 @@
 
 	require dirname(__DIR__, 2) . "/resources/require.php";
 	require __DIR__ . "/resources/classes/api_auth.php";
+	require __DIR__ . "/resources/classes/api_leitura.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -39,6 +40,15 @@
 
 		case 'GET ping':
 			responde(['ok' => true, 'domain_uuid' => $domain_uuid]);
+
+		case 'GET dominio':
+			responde(api_leitura::dominio($domain_uuid));
+
+		case 'GET ramais':
+			responde(api_leitura::ramais($domain_uuid));
+
+		case 'GET troncos':
+			responde(api_leitura::troncos($domain_uuid));
 
 		default:
 			responde(['erro' => "rota desconhecida: $metodo $rota"], 404);
