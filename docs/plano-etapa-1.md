@@ -599,7 +599,7 @@ git commit -am "feat(api): criacao de ramal"
 
 ---
 
-### Tarefa 5: `POST /troncos`
+### Tarefa 5: `POST /troncos` — FEITA
 
 **Arquivos:**
 - Criar: `app/simplificaja_api/resources/classes/api_tronco.php`

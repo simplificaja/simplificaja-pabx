@@ -12,6 +12,7 @@
 	require __DIR__ . "/resources/classes/api_leitura.php";
 	require __DIR__ . "/resources/classes/api_saude.php";
 	require __DIR__ . "/resources/classes/api_ramal.php";
+	require __DIR__ . "/resources/classes/api_tronco.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -68,6 +69,14 @@
 			$numero = trim((string) ($_GET['extension'] ?? ''));
 			if ($numero === '') { responde(['erro' => 'extension é obrigatório'], 422); }
 			responde(api_ramal::remover($domain_uuid, $numero));
+
+		case 'POST troncos':
+			responde(api_tronco::criar($domain_uuid, corpo()), 201);
+
+		case 'DELETE troncos':
+			$nome = trim((string) ($_GET['nome'] ?? ''));
+			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
+			responde(api_tronco::remover($domain_uuid, $nome));
 
 		default:
 			responde(['erro' => "rota desconhecida: $metodo $rota"], 404);
