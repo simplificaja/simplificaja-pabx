@@ -12,6 +12,7 @@ scripts que fazem o FusionPBX servir o SimplificaJá.
 |---|---|
 | `scripts/chatwoot_hangup.lua` | gancho de desligamento que manda a chamada para o Chatwoot |
 | `scripts/instalar.sh` | instala um FusionPBX já personalizado numa VM limpa |
+| `scripts/restringir-api.sh` | fecha a API ao IP que a consome |
 | `scripts/gerar-audios.sh` | gera os áudios da URA em português |
 | `scripts/aplicar-configuracao.sql` | as configurações que diferem do padrão |
 | `docs/armadilhas.md` | o que parece certo na tela e não funciona |
