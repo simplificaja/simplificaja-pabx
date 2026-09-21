@@ -99,6 +99,17 @@
 		case 'DELETE dominio':
 			responde(api_dominio::remover(corpo()));
 
+		case 'GET gravacoes':
+			responde(api_leitura::gravacoes($domain_uuid));
+
+		case 'POST gravacoes':
+			responde(api_gravacao::criar($domain_uuid, corpo()));
+
+		case 'DELETE gravacoes':
+			$nome = trim((string) (corpo()['nome'] ?? ''));
+			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
+			responde(api_gravacao::remover($domain_uuid, $nome));
+
 		case 'GET destinos':
 			responde(api_leitura::destinos($domain_uuid));
 

@@ -104,6 +104,15 @@ class api_leitura {
 		) ?? [];
 	}
 
+	public static function gravacoes(string $domain_uuid): array {
+		return self::db()->select(
+			"select recording_filename, recording_name, recording_description, "
+			."octet_length(recording_base64) as base64_bytes "
+			."from v_recordings where domain_uuid = :u order by recording_filename",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+	}
+
 	public static function troncos(string $domain_uuid): array {
 		$db = self::db();
 		$linhas = $db->select(

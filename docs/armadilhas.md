@@ -102,3 +102,24 @@ Compare sempre com o banco — o que está em memória e não está em
 select g.gateway, coalesce(d.domain_name,'SEM DOMINIO') from v_gateways g
 left join v_domains d on d.domain_uuid = g.domain_uuid;
 ```
+
+## Gravação sem `recording_base64` não toca no painel
+
+O app de gravações do FusionPBX grava o arquivo em disco **e** guarda o
+conteúdo em `recording_base64` (`recordings/recording_edit.php:269`). O base64
+é o que a tela usa para tocar o áudio; o arquivo é o que a chamada toca.
+Gravação criada só com o arquivo funciona na ligação e **o botão de tocar no
+painel não faz nada** — sem erro, sem aviso.
+
+Em 21/09/2026 as cinco gravações do domínio `pabx.` estavam assim, criadas à
+mão antes da API existir.
+
+Conferir:
+
+```sql
+select recording_filename, octet_length(recording_base64) from v_recordings;
+```
+
+`null` ali é gravação meio criada. E o base64 tem que ser do arquivo **já
+convertido** para 8 kHz mono: se vier do original, o painel toca um áudio e a
+ligação toca outro.
