@@ -76,7 +76,13 @@ class api_ura {
 			responde(['erro' => "o ramal $ramal já é de um atendente"], 409);
 		}
 
+		// Dois audios: o primeiro toca na entrada (anuncio + opcoes), o segundo
+		// nas repeticoes (so as opcoes). Quem nao mandar o segundo repete o
+		// anuncio inteiro toda vez, que cansa.
 		$saudacao = self::caminho_do_audio($dominio, (string) $dados['saudacao']);
+		$repeticao = empty($dados['opcoes_audio'])
+			? $saudacao
+			: self::caminho_do_audio($dominio, (string) $dados['opcoes_audio']);
 		$ivr_menu_uuid = uuid();
 		$dialplan_uuid = uuid();
 
@@ -94,7 +100,7 @@ class api_ura {
 			'ivr_menu_extension'     => $ramal,
 			'ivr_menu_context'       => $dominio,
 			'ivr_menu_greet_long'    => $saudacao,
-			'ivr_menu_greet_short'   => $saudacao,
+			'ivr_menu_greet_short'   => $repeticao,
 			'ivr_menu_timeout'       => (string) ($dados['espera'] ?? 5000),
 			'ivr_menu_max_failures'  => '3',
 			'ivr_menu_max_timeouts'  => '3',
