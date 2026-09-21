@@ -4,7 +4,6 @@
 -- as chamadas daquele cliente acontecem e nao sao registradas -- falha silenciosa.
 
 local url = "CHATWOOT_URL"
-local segredo = "CHATWOOT_SECRET"
 
 local function var(...)
   for _, nome in ipairs({...}) do
@@ -34,6 +33,24 @@ local campos = {
   started_at   = var("variable_start_stamp"),
 }
 if campos.duration == "" then campos.duration = "0" end
+
+-- O segredo e por dominio. Le do v_domain_settings do dominio da propria
+-- chamada, e nao de um valor fixo no script: assim um PABX invadido alcanca
+-- os clientes dele, e nao a instalacao inteira do SimplificaJa.
+require "resources.functions.settings"
+local domain_uuid = var("variable_domain_uuid")
+local ajustes = domain_uuid ~= "" and settings(domain_uuid) or nil
+local segredo = ajustes and ajustes["simplificaja"]
+	and ajustes["simplificaja"]["webhook_secret"]
+	and ajustes["simplificaja"]["webhook_secret"]["text"]
+
+-- Sem segredo o Chatwoot recusaria com 401 e a chamada sumiria do historico
+-- sem deixar rastro. Melhor gritar no console do FreeSWITCH.
+if segredo == nil or segredo == "" then
+	freeswitch.consoleLog("err",
+		"[chatwoot] dominio " .. domain_uuid .. " sem simplificaja/webhook_secret; chamada nao registrada\n")
+	return
+end
 
 local partes = {}
 for k, v in pairs(campos) do

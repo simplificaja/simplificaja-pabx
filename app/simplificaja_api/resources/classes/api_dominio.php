@@ -52,7 +52,14 @@ class api_dominio {
 		// Chave própria do domínio: daqui em diante o painel fala com este
 		// tenant por ela, e o escopo de tudo sai dela.
 		$chave = bin2hex(random_bytes(24));
-		self::guardar_chave($db, $domain_uuid, $chave);
+		self::guardar_ajuste($db, $domain_uuid, 'api_key', $chave,
+			'Chave da API consumida pelo painel do SimplificaJá');
+
+		// Segredo do gancho de desligamento. Por domínio, e não da instalação,
+		// para que um PABX invadido alcance os clientes dele e não todos.
+		$segredo = bin2hex(random_bytes(24));
+		self::guardar_ajuste($db, $domain_uuid, 'webhook_secret', $segredo,
+			'Segredo que o gancho de desligamento manda ao SimplificaJá');
 
 		$socket = event_socket::create();
 		if ($socket && $socket->is_connected()) {
@@ -63,6 +70,7 @@ class api_dominio {
 			'domain_uuid' => $domain_uuid,
 			'dominio'     => $nome,
 			'api_key'     => $chave,
+			'webhook_secret' => $segredo,
 		];
 	}
 
@@ -118,18 +126,19 @@ class api_dominio {
 		$dominios->upgrade();
 	}
 
-	private static function guardar_chave($db, string $domain_uuid, string $chave): void {
+	private static function guardar_ajuste($db, string $domain_uuid, string $subcategoria,
+		string $valor, string $descricao): void {
 		$p = permissions::new();
 		$p->add('domain_setting_add', 'temp');
 		$array['domain_settings'][0] = [
 			'domain_setting_uuid'        => uuid(),
 			'domain_uuid'                => $domain_uuid,
 			'domain_setting_category'    => 'simplificaja',
-			'domain_setting_subcategory' => 'api_key',
+			'domain_setting_subcategory' => $subcategoria,
 			'domain_setting_name'        => 'text',
-			'domain_setting_value'       => $chave,
+			'domain_setting_value'       => $valor,
 			'domain_setting_enabled'     => 'true',
-			'domain_setting_description' => 'Chave da API consumida pelo painel do SimplificaJá',
+			'domain_setting_description' => $descricao,
 		];
 		$db->save($array);
 		$p->delete('domain_setting_add', 'temp');
