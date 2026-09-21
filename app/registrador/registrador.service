@@ -1,0 +1,18 @@
+[Unit]
+Description=SimplificaJa - registra chamadas do FreeSWITCH no painel
+After=freeswitch.service postgresql.service
+Wants=freeswitch.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/simplificaja/registrador.py
+Restart=always
+RestartSec=5
+# Le /etc/fusionpbx/config.conf, que e do www-data; roda como root para nao
+# precisar de uma segunda copia da senha do banco.
+User=root
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
