@@ -61,6 +61,10 @@ enquanto a captura mostrava a operadora respondendo `401` em 200ms.
 
 ## `DELETE /dominio` deixa o IP da operadora para trás
 
+> **Resolvido em 21/09/2026:** o `DELETE /dominio` passou a limpar isto
+> antes de apagar as linhas. Fica registrado porque a causa continua valendo
+> para qualquer coisa que viva fora do banco.
+
 Remover o domínio apaga tronco, destino e ramais, mas **não** remove a entrada
 que o `POST /troncos` criou na lista de acesso `providers`. Cada cliente que sai
 deixa um IP liberado no Event Guard para sempre — decaimento lento, sem sintoma
@@ -78,6 +82,10 @@ where a.access_control_name = 'providers';
 ```
 
 ## Remover o domínio não tira o tronco da memória do FreeSWITCH
+
+> **Resolvido em 21/09/2026:** o `DELETE /dominio` passou a limpar isto
+> antes de apagar as linhas. Fica registrado porque a causa continua valendo
+> para qualquer coisa que viva fora do banco.
 
 `DELETE /dominio` apaga o gateway do Postgres, mas o sofia mantém o que já
 carregou. O tronco do cliente removido **continua tentando registrar na

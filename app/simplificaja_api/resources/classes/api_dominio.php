@@ -89,6 +89,10 @@ class api_dominio {
 
 		$domain_uuid = $linha['domain_uuid'];
 
+		// Antes de apagar as linhas: o que existe FORA do banco precisa sair
+		// aqui, senão vira órfão que ninguém mais consegue associar ao dono.
+		self::limpar_fora_do_banco($db, $domain_uuid);
+
 		// Apagar o domínio deixa ramais, troncos e rotas órfãos no banco, que é
 		// pior do que não apagar: ficam invisíveis e continuam ocupando número.
 		$p = permissions::new();
@@ -124,6 +128,56 @@ class api_dominio {
 	private static function aplicar_padroes(): void {
 		$dominios = new domains();
 		$dominios->upgrade();
+	}
+
+	/**
+	 * Duas coisas sobrevivem ao `delete` e viram lixo silencioso:
+	 *
+	 * - O gateway que o FreeSWITCH já carregou. Sai do Postgres e continua
+	 *   tentando registrar na operadora indefinidamente, por um cliente que
+	 *   não existe mais.
+	 * - O IP da operadora na lista de acesso `providers`, que o `POST
+	 *   /troncos` acrescenta. Cada cliente que sai deixa um IP liberado no
+	 *   Event Guard para sempre.
+	 *
+	 * Detectar depois é pior que limpar agora: nenhuma tela mostra isso.
+	 */
+	private static function limpar_fora_do_banco($db, string $domain_uuid): void {
+		$gateways = $db->select(
+			"select gateway_uuid, proxy from v_gateways where domain_uuid = :u",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+		if (empty($gateways)) {
+			return;
+		}
+
+		$socket = event_socket::create();
+		$ligado = $socket && $socket->is_connected();
+
+		foreach ($gateways as $gateway) {
+			if ($ligado) {
+				event_socket::api('sofia profile external killgw ' . $gateway['gateway_uuid']);
+			}
+			// O IP só sai se mais nenhum tronco o usar: dois clientes podem
+			// vir da mesma operadora, e derrubar o IP levaria o outro junto.
+			$em_uso = (int) $db->select(
+				"select count(*) as n from v_gateways "
+				."where proxy = :p and domain_uuid <> :u",
+				['p' => $gateway['proxy'], 'u' => $domain_uuid], 'column'
+			);
+			if ($em_uso === 0) {
+				$db->execute(
+					"delete from v_access_control_nodes where node_cidr = :c "
+					."and access_control_uuid in (select access_control_uuid from v_access_controls "
+					."where access_control_name = 'providers')",
+					['c' => $gateway['proxy'] . '/32']
+				);
+			}
+		}
+
+		if ($ligado) {
+			event_socket::api('reloadacl');
+		}
 	}
 
 	private static function guardar_ajuste($db, string $domain_uuid, string $subcategoria,

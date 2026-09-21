@@ -27,6 +27,30 @@ class api_saude {
 		return ['checagem' => $checagem, 'ok' => $ok, 'detalhe' => $ok ? null : $detalhe];
 	}
 
+	/** Compara o que o banco diz existir com o que está no disco. */
+	private static function gravacoes_sem_arquivo(string $domain_uuid): array {
+		$db = self::db();
+		$dominio = $db->select("select domain_name from v_domains where domain_uuid = :u",
+			['u' => $domain_uuid], 'column');
+		$base = rtrim(trim(self::switch_api('global_getvar recordings_dir')), '/');
+		if ($base === '' || $dominio === '') {
+			return [];
+		}
+
+		$linhas = $db->select(
+			"select recording_filename from v_recordings where domain_uuid = :u",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+
+		$faltando = [];
+		foreach ($linhas as $linha) {
+			if (!file_exists($base . '/' . $dominio . '/' . $linha['recording_filename'])) {
+				$faltando[] = $linha['recording_filename'];
+			}
+		}
+		return $faltando;
+	}
+
 	public static function verificar(string $domain_uuid): array {
 		$db = self::db();
 		$r = [];
@@ -109,6 +133,23 @@ class api_saude {
 		);
 		$r[] = self::item('ramais com senha forte', $n === 0,
 			"$n ramal(is) com senha curta ou vazia: alvo de varredura");
+
+		// 7. Gravação sem base64. O painel do FusionPBX toca o base64 e a chamada
+		//    toca o arquivo; sem ele o áudio funciona na ligação e o botão de
+		//    tocar no painel não faz nada.
+		$n = (int) $db->select(
+			"select count(*) as n from v_recordings where domain_uuid = :u "
+			."and coalesce(octet_length(recording_base64), 0) = 0",
+			['u' => $domain_uuid], 'column'
+		);
+		$r[] = self::item('gravações tocam no painel', $n === 0,
+			"$n gravação(ões) sem base64: toca na ligação e não toca no painel");
+
+		// 8. Gravação cujo arquivo sumiu do disco. Há dois diretórios parecidos
+		//    no servidor e só um é usado -- o caminho vem do FreeSWITCH.
+		$faltando = self::gravacoes_sem_arquivo($domain_uuid);
+		$r[] = self::item('arquivos das gravações no lugar', empty($faltando),
+			implode(', ', $faltando) . ' sem arquivo no disco: a URA fica muda');
 
 		return [
 			'tudo_certo' => !in_array(false, array_column($r, 'ok'), true),
