@@ -104,6 +104,17 @@ class api_leitura {
 		) ?? [];
 	}
 
+	public static function uras(string $domain_uuid): array {
+		return self::db()->select(
+			"select i.ivr_menu_name, i.ivr_menu_extension, i.ivr_menu_greet_long, "
+			."i.ivr_menu_enabled, coalesce(length(p.dialplan_xml),0) as xml_bytes, "
+			."(select count(*) from v_ivr_menu_options o where o.ivr_menu_uuid = i.ivr_menu_uuid) as opcoes "
+			."from v_ivr_menus i left join v_dialplans p on p.dialplan_uuid = i.dialplan_uuid "
+			."where i.domain_uuid = :u order by i.ivr_menu_extension",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+	}
+
 	public static function gravacoes(string $domain_uuid): array {
 		return self::db()->select(
 			"select recording_filename, recording_name, recording_description, "

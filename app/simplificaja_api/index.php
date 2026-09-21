@@ -99,6 +99,17 @@
 		case 'DELETE dominio':
 			responde(api_dominio::remover(corpo()));
 
+		case 'GET uras':
+			responde(api_leitura::uras($domain_uuid));
+
+		case 'POST uras':
+			responde(api_ura::criar($domain_uuid, corpo()));
+
+		case 'DELETE uras':
+			$ramal = trim((string) (corpo()['ramal'] ?? ''));
+			if ($ramal === '') { responde(['erro' => 'ramal é obrigatório'], 422); }
+			responde(api_ura::remover($domain_uuid, $ramal));
+
 		case 'GET gravacoes':
 			responde(api_leitura::gravacoes($domain_uuid));
 
