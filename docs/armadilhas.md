@@ -76,3 +76,29 @@ select n.node_cidr, n.node_description from v_access_control_nodes n
 join v_access_controls a on a.access_control_uuid = n.access_control_uuid
 where a.access_control_name = 'providers';
 ```
+
+## Remover o domínio não tira o tronco da memória do FreeSWITCH
+
+`DELETE /dominio` apaga o gateway do Postgres, mas o sofia mantém o que já
+carregou. O tronco do cliente removido **continua tentando registrar na
+operadora**, em `FAIL_WAIT` com retentativa, indefinidamente — ruído em
+direção à operadora por um cliente que não existe mais, e ninguém percebe
+porque nada na tela mostra.
+
+Descoberto em 21/09/2026: um gateway de teste aparecia em `sofia status` sem
+existir em `v_gateways`.
+
+Conferir e limpar:
+
+```bash
+fs_cli -x "sofia status" | grep -i gateway     # o que está carregado
+fs_cli -x "sofia profile external killgw <uuid>"
+```
+
+Compare sempre com o banco — o que está em memória e não está em
+`v_gateways` é órfão:
+
+```sql
+select g.gateway, coalesce(d.domain_name,'SEM DOMINIO') from v_gateways g
+left join v_domains d on d.domain_uuid = g.domain_uuid;
+```
