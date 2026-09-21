@@ -15,6 +15,9 @@
 	require __DIR__ . "/resources/classes/api_tronco.php";
 	require __DIR__ . "/resources/classes/api_destino.php";
 	require __DIR__ . "/resources/classes/api_dominio.php";
+	require __DIR__ . "/resources/classes/api_ura.php";
+	require __DIR__ . "/resources/classes/api_gravacao.php";
+	require __DIR__ . "/resources/classes/api_grupo.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -120,6 +123,24 @@
 			$nome = trim((string) (corpo()['nome'] ?? ''));
 			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
 			responde(api_gravacao::remover($domain_uuid, $nome));
+
+		case 'GET grupos':
+			responde(api_leitura::grupos($domain_uuid));
+
+		case 'POST grupos':
+			responde(api_grupo::criar($domain_uuid, corpo()), 201);
+
+		case 'DELETE grupos':
+			$ramal = trim((string) (corpo()['ramal'] ?? ''));
+			if ($ramal === '') { responde(['erro' => 'ramal é obrigatório'], 422); }
+			responde(api_grupo::remover($domain_uuid, $ramal));
+
+		// O conteudo de UMA gravacao. O nome vem na query porque GET nao tem
+		// corpo; e o unico lugar da API que le de `$_GET`.
+		case 'GET gravacao':
+			$nome = trim((string) ($_GET['nome'] ?? ''));
+			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
+			responde(api_leitura::gravacao($domain_uuid, $nome));
 
 		case 'GET destinos':
 			responde(api_leitura::destinos($domain_uuid));

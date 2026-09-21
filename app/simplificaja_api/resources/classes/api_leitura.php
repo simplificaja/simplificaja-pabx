@@ -68,10 +68,90 @@ class api_leitura {
 		) ?? [];
 
 		$registrados = self::registrados(self::nome_do_dominio($domain_uuid));
+		$grupos = self::grupos_por_ramal($domain_uuid);
 		foreach ($linhas as &$linha) {
 			$linha['registrado'] = in_array($linha['extension'], $registrados, true);
+			$linha['grupos'] = $grupos[$linha['extension']] ?? [];
 		}
 		return $linhas;
+	}
+
+	/**
+	 * De quais grupos cada ramal participa. Participar de mais de um é normal
+	 * -- nada na tabela impede -- e é justamente o caso que a tela precisa
+	 * mostrar: sem isso, "a ligação tocou aqui" não diz de onde veio.
+	 */
+	private static function grupos_por_ramal(string $domain_uuid): array {
+		$linhas = self::db()->select(
+			"select d.destination_number, g.ring_group_name "
+			."from v_ring_group_destinations d "
+			."join v_ring_groups g on g.ring_group_uuid = d.ring_group_uuid "
+			."where d.domain_uuid = :u order by g.ring_group_name",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+
+		$mapa = [];
+		foreach ($linhas as $linha) {
+			$mapa[$linha['destination_number']][] = $linha['ring_group_name'];
+		}
+		return $mapa;
+	}
+
+	/**
+	 * Grupos com os membros dentro, na ordem em que tocam.
+	 *
+	 * `destination_delay` é atraso na estratégia simultânea e ORDEM na
+	 * sequencial -- a própria tela do FusionPBX troca o rótulo do campo. Ordenar
+	 * por ele serve aos dois casos.
+	 */
+	public static function grupos(string $domain_uuid): array {
+		$db = self::db();
+		$grupos = $db->select(
+			"select ring_group_uuid, ring_group_name, ring_group_extension, "
+			."ring_group_strategy, ring_group_call_timeout, ring_group_cid_name_prefix, "
+			."ring_group_timeout_data, ring_group_enabled, "
+			."coalesce(length(p.dialplan_xml), 0) as xml_bytes "
+			."from v_ring_groups g left join v_dialplans p on p.dialplan_uuid = g.dialplan_uuid "
+			."where g.domain_uuid = :u order by ring_group_extension",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+		if (empty($grupos)) {
+			return [];
+		}
+
+		$membros = $db->select(
+			"select ring_group_uuid, destination_number, destination_delay "
+			."from v_ring_group_destinations where domain_uuid = :u "
+			."order by destination_delay, destination_number",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+
+		$nomes = self::nomes_dos_ramais($domain_uuid);
+		$registrados = self::registrados(self::nome_do_dominio($domain_uuid));
+
+		foreach ($grupos as &$grupo) {
+			$grupo['ramais'] = [];
+			foreach ($membros as $membro) {
+				if ($membro['ring_group_uuid'] !== $grupo['ring_group_uuid']) {
+					continue;
+				}
+				$numero = $membro['destination_number'];
+				$grupo['ramais'][] = [
+					'extension'   => $numero,
+					'description' => $nomes[$numero] ?? null,
+					'registrado'  => in_array($numero, $registrados, true),
+				];
+			}
+		}
+		return $grupos;
+	}
+
+	private static function nomes_dos_ramais(string $domain_uuid): array {
+		$linhas = self::db()->select(
+			"select extension, description from v_extensions where domain_uuid = :u",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+		return array_column($linhas, 'description', 'extension');
 	}
 
 	/**
@@ -104,15 +184,71 @@ class api_leitura {
 		) ?? [];
 	}
 
+	/**
+	 * URAs com as opções dentro. A contagem sozinha não serve: "2 opções" não
+	 * diz para onde a tecla 1 leva, e conferir isso é a razão de a tela existir.
+	 */
 	public static function uras(string $domain_uuid): array {
-		return self::db()->select(
-			"select i.ivr_menu_name, i.ivr_menu_extension, i.ivr_menu_greet_long, "
-			."i.ivr_menu_enabled, coalesce(length(p.dialplan_xml),0) as xml_bytes, "
-			."(select count(*) from v_ivr_menu_options o where o.ivr_menu_uuid = i.ivr_menu_uuid) as opcoes "
+		$db = self::db();
+		$uras = $db->select(
+			"select i.ivr_menu_uuid, i.ivr_menu_name, i.ivr_menu_extension, "
+			."i.ivr_menu_greet_long, i.ivr_menu_greet_short, i.ivr_menu_exit_data, "
+			."i.ivr_menu_enabled, coalesce(length(p.dialplan_xml),0) as xml_bytes "
 			."from v_ivr_menus i left join v_dialplans p on p.dialplan_uuid = i.dialplan_uuid "
 			."where i.domain_uuid = :u order by i.ivr_menu_extension",
 			['u' => $domain_uuid], 'all'
 		) ?? [];
+		if (empty($uras)) {
+			return [];
+		}
+
+		$opcoes = $db->select(
+			"select ivr_menu_uuid, ivr_menu_option_digits, ivr_menu_option_param "
+			."from v_ivr_menu_options where domain_uuid = :u order by ivr_menu_option_order",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+
+		foreach ($uras as &$ura) {
+			$ura['opcoes'] = [];
+			foreach ($opcoes as $opcao) {
+				if ($opcao['ivr_menu_uuid'] === $ura['ivr_menu_uuid']) {
+					$ura['opcoes'][] = [
+						'digito'  => $opcao['ivr_menu_option_digits'],
+						'destino' => self::numero_do_transfer($opcao['ivr_menu_option_param']),
+					];
+				}
+			}
+			$ura['saida'] = self::numero_do_transfer($ura['ivr_menu_exit_data']);
+		}
+		return $uras;
+	}
+
+	/** `transfer 1001 XML cliente.pabx...` -> `1001`. */
+	private static function numero_do_transfer(?string $param): ?string {
+		$partes = preg_split('/\s+/', trim((string) $param));
+		$numero = $partes[0] === 'transfer' ? ($partes[1] ?? '') : ($partes[0] ?? '');
+		return $numero === '' ? null : $numero;
+	}
+
+	/**
+	 * O conteúdo de uma gravação, para o painel tocar. Fica fora da listagem
+	 * de propósito: são dezenas de KB por arquivo, e carregar tudo a cada
+	 * abertura de tela para tocar no máximo um é desperdício garantido.
+	 */
+	public static function gravacao(string $domain_uuid, string $nome): array {
+		$arquivo = preg_replace('/[^A-Za-z0-9_.-]/', '', $nome);
+		$linha = self::db()->select(
+			"select recording_filename, recording_base64 from v_recordings "
+			."where domain_uuid = :u and recording_filename = :f",
+			['u' => $domain_uuid, 'f' => $arquivo], 'row'
+		);
+		if (empty($linha)) {
+			responde(['erro' => "não existe gravação chamada $arquivo"], 404);
+		}
+		if (empty($linha['recording_base64'])) {
+			responde(['erro' => "a gravação $arquivo não tem prévia guardada"], 422);
+		}
+		return ['gravacao' => $arquivo, 'audio' => $linha['recording_base64']];
 	}
 
 	public static function gravacoes(string $domain_uuid): array {
