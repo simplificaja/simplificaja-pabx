@@ -58,3 +58,21 @@ sendo descartado no meio.
 
 Foi assim que o Event Guard apareceu: o FreeSWITCH acusava `408 Request Timeout`
 enquanto a captura mostrava a operadora respondendo `401` em 200ms.
+
+## `DELETE /dominio` deixa o IP da operadora para trás
+
+Remover o domínio apaga tronco, destino e ramais, mas **não** remove a entrada
+que o `POST /troncos` criou na lista de acesso `providers`. Cada cliente que sai
+deixa um IP liberado no Event Guard para sempre — decaimento lento, sem sintoma
+visível, que só aparece quando alguém audita a ACL.
+
+Descoberto em 20/09/2026 testando a criação e remoção de um cliente inteiro: o
+IP de teste continuou na ACL depois de o domínio ter sumido.
+
+Conferir com:
+
+```sql
+select n.node_cidr, n.node_description from v_access_control_nodes n
+join v_access_controls a on a.access_control_uuid = n.access_control_uuid
+where a.access_control_name = 'providers';
+```
