@@ -7,7 +7,27 @@
  */
 class api_gravacao {
 
-	const DIRETORIO = '/var/lib/freeswitch/storage/recordings';
+	/**
+	 * Onde os áudios moram. Vem da configuração do FusionPBX, não cravado:
+	 * `recording_edit.php:199` usa `$settings->get('switch','recordings')`, e
+	 * cravar o caminho põe o arquivo onde nem o FreeSWITCH nem o painel deles
+	 * procuram -- o áudio existe, tem o formato certo, e não toca.
+	 */
+	private static function diretorio(): string {
+		// Pergunta ao FreeSWITCH em vez de cravar: ele e quem resolve
+		// `recordings_dir`, e e onde os audios existentes estao. O
+		// `switch.recordings` do FusionPBX pode estar vazio -- neste servidor
+		// esta -- e ai cravar um caminho poe o arquivo onde ninguem procura:
+		// o audio existe, tem o formato certo, e nao toca.
+		$socket = event_socket::create();
+		$base = ($socket && $socket->is_connected())
+			? trim((string) event_socket::api('global_getvar recordings_dir'))
+			: '';
+		if ($base === '' || $base === '-ERR no reply') {
+			responde(['erro' => 'FreeSWITCH nao respondeu onde ficam as gravacoes'], 500);
+		}
+		return rtrim($base, '/');
+	}
 
 	private static function db() {
 		return database::new(['db' => $GLOBALS['db'] ?? null]);
@@ -33,7 +53,7 @@ class api_gravacao {
 		}
 
 		$dominio = self::nome_do_dominio($domain_uuid);
-		$pasta = self::DIRETORIO . '/' . $dominio;
+		$pasta = self::diretorio() . '/' . $dominio;
 		if (!is_dir($pasta) && !mkdir($pasta, 0770, true)) {
 			responde(['erro' => "não consegui criar $pasta"], 500);
 		}
@@ -123,7 +143,7 @@ class api_gravacao {
 
 		// O arquivo sai depois da linha: se a remoção do banco falhar, o áudio
 		// continua lá e a gravação segue funcionando.
-		$caminho = self::DIRETORIO . '/' . self::nome_do_dominio($domain_uuid) . '/' . $arquivo;
+		$caminho = self::diretorio() . '/' . self::nome_do_dominio($domain_uuid) . '/' . $arquivo;
 		if (file_exists($caminho)) {
 			unlink($caminho);
 		}

@@ -123,3 +123,26 @@ select recording_filename, octet_length(recording_base64) from v_recordings;
 `null` ali é gravação meio criada. E o base64 tem que ser do arquivo **já
 convertido** para 8 kHz mono: se vier do original, o painel toca um áudio e a
 ligação toca outro.
+
+## O diretório das gravações não é o que o nome sugere
+
+Existem dois caminhos parecidos no servidor:
+
+```
+/var/lib/freeswitch/recordings          <- o que vale
+/var/lib/freeswitch/storage/recordings  <- existe e não é usado
+```
+
+O FusionPBX resolve por `$settings->get('switch','recordings')`, mas nesta
+instalação esse valor está **vazio no banco** e quem responde de verdade é o
+FreeSWITCH, por `global_getvar recordings_dir`.
+
+Gravar no caminho errado produz o pior tipo de falha: o arquivo existe, tem o
+formato certo, tem o dono certo, e simplesmente não toca -- porque nem o
+FreeSWITCH nem o painel olham ali. Conferir o formato e o dono não pega isso.
+
+Perguntar, nunca cravar:
+
+```bash
+fs_cli -x "global_getvar recordings_dir"
+```
