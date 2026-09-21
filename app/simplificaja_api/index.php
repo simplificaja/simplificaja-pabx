@@ -54,6 +54,10 @@
 	// mas isso viraria edição obrigatória de nginx em toda instalação nova, e é
 	// onde se derruba o painel inteiro do PABX. PATH_INFO continua aceito para
 	// quem tiver o nginx preparado.
+	// Todo DELETE le do corpo, como POST. Tres liam da query e o de dominio
+	// do corpo: a inconsistencia custa uma hora de quem for escrever o
+	// proximo cliente, e o sintoma e 422 dizendo que falta um campo que
+	// esta sendo mandado.
 	$rota = $rota_pedida;
 
 	switch ("$metodo $rota") {
@@ -77,7 +81,7 @@
 			responde(api_ramal::criar($domain_uuid, corpo()), 201);
 
 		case 'DELETE ramais':
-			$numero = trim((string) ($_GET['extension'] ?? ''));
+			$numero = trim((string) (corpo()['extension'] ?? ''));
 			if ($numero === '') { responde(['erro' => 'extension é obrigatório'], 422); }
 			responde(api_ramal::remover($domain_uuid, $numero));
 
@@ -85,7 +89,7 @@
 			responde(api_tronco::criar($domain_uuid, corpo()), 201);
 
 		case 'DELETE troncos':
-			$nome = trim((string) ($_GET['nome'] ?? ''));
+			$nome = trim((string) (corpo()['nome'] ?? ''));
 			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
 			responde(api_tronco::remover($domain_uuid, $nome));
 
@@ -102,7 +106,7 @@
 			responde(api_destino::criar($domain_uuid, corpo()), 201);
 
 		case 'DELETE destinos':
-			$numero = trim((string) ($_GET['numero'] ?? ''));
+			$numero = trim((string) (corpo()['numero'] ?? ''));
 			if ($numero === '') { responde(['erro' => 'numero é obrigatório'], 422); }
 			responde(api_destino::remover($domain_uuid, $numero));
 
