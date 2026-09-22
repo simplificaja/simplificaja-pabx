@@ -45,7 +45,10 @@ insert into v_default_settings
 select gen_random_uuid(), 'theme', t.v, 'text', t.valor, true, 'SimplificaJá'
   from (values ('logo_login', '/themes/simplificaja/images/logo.svg'),
                ('logo',       '/themes/simplificaja/images/logo.svg'),
-               ('login_logo_width', '260px')) as t(v, valor)
+               ('login_logo_width', '260px'),
+               -- Sem esta linha o `footer.php` cai em
+               -- `/themes/default/favicon.ico`, que e a marca deles na aba.
+               ('favicon',    '/themes/simplificaja/images/favicon.ico')) as t(v, valor)
  where not exists (
    select 1 from v_default_settings
     where default_setting_category = 'theme' and default_setting_subcategory = t.v);
