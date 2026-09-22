@@ -38,7 +38,8 @@
 	// As rotas de domínio criam ou apagam o tenant, então não têm domínio de
 	// onde tirar escopo: usam a chave de instância. Todo o resto é escopado
 	// pela chave do domínio.
-	if ($rota_pedida === 'dominio' && in_array($metodo, ['POST', 'DELETE'], true)) {
+	if (in_array($rota_pedida, ['dominio', 'dominio-adotar'], true)
+		&& in_array($metodo, ['POST', 'DELETE'], true)) {
 		api_auth::exigir_admin();
 		$domain_uuid = null;
 	}
@@ -99,6 +100,9 @@
 
 		case 'POST dominio':
 			responde(api_dominio::criar(corpo()), 201);
+
+		case 'POST dominio-adotar':
+			responde(api_dominio::adotar(corpo()), 200);
 
 		case 'DELETE dominio':
 			responde(api_dominio::remover(corpo()));

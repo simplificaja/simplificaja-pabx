@@ -66,23 +66,30 @@ class Segredos:
         self._banco = credenciais_do_banco()
 
     def de(self, dominio):
+        """Devolve (segredo, e_nosso). `e_nosso` distingue tenant alheio de
+        tenant nosso sem segredo -- so o segundo e defeito."""
         agora = time.time()
         guardado = self._cache.get(dominio)
-        if guardado and agora - guardado[1] < self.VALIDADE:
-            return guardado[0]
+        if not guardado or agora - guardado[1] >= self.VALIDADE:
+            guardado = (self._consultar(dominio), agora)
+            self._cache[dominio] = guardado
 
-        segredo = self._consultar(dominio)
-        self._cache[dominio] = (segredo, agora)
-        return segredo
+        chaves = guardado[0]
+        return chaves.get("webhook_secret"), bool(chaves.get("api_key"))
 
     def _consultar(self, dominio):
+        # Traz as duas chaves de uma vez para distinguir dois estados que sao
+        # muito diferentes e pareciam iguais: tenant que nunca foi nosso (o
+        # FusionPBX e multi-tenant, e pode haver cliente so de PABX no mesmo
+        # servidor) e tenant nosso que perdeu o segredo, que e defeito.
         sql = (
-            "select s.domain_setting_value from v_domain_settings s "
+            "select s.domain_setting_subcategory, s.domain_setting_value "
+            "from v_domain_settings s "
             "join v_domains d on d.domain_uuid = s.domain_uuid "
             "where d.domain_name = %s "
             "and s.domain_setting_category = 'simplificaja' "
-            "and s.domain_setting_subcategory = 'webhook_secret' "
-            "and s.domain_setting_enabled = true limit 1"
+            "and s.domain_setting_subcategory in ('webhook_secret', 'api_key') "
+            "and s.domain_setting_enabled = true"
         ) % _literal(dominio)
         ambiente = dict(os.environ, PGPASSWORD=self._banco.get("password", ""))
         try:
@@ -94,10 +101,15 @@ class Segredos:
                  "-tAc", sql],
                 capture_output=True, text=True, timeout=10, env=ambiente, check=True,
             )
-            return saida.stdout.strip() or None
+            achados = {}
+            for linha in saida.stdout.strip().split("\n"):
+                if "|" in linha:
+                    chave, _, valor = linha.partition("|")
+                    achados[chave.strip()] = valor.strip()
+            return achados
         except (subprocess.SubprocessError, OSError) as erro:
-            log.error("nao consegui ler o segredo de %s: %s", dominio, erro)
-            return None
+            log.error("nao consegui ler as chaves de %s: %s", dominio, erro)
+            return {}
 
 
 def _literal(texto):
@@ -241,10 +253,17 @@ def registrar(sessao, segredos, evento):
     if not corpo["domain"] or not corpo["call_uuid"]:
         return
 
-    segredo = segredos.de(corpo["domain"])
+    segredo, nosso = segredos.de(corpo["domain"])
     if not segredo:
-        log.error("dominio %s sem webhook_secret; chamada %s nao registrada",
-                  corpo["domain"], corpo["call_uuid"])
+        # Tenant que nao e nosso nao e erro: o FusionPBX e multi-tenant e pode
+        # hospedar cliente so de PABX. Gritar aqui enche o log de linha que
+        # ninguem vai ler -- e ai a linha que importa passa batida.
+        if nosso:
+            log.error("dominio %s tem api_key e nao tem webhook_secret; "
+                      "chamada %s nao registrada", corpo["domain"], corpo["call_uuid"])
+        else:
+            log.debug("dominio %s nao e do SimplificaJa; chamada %s ignorada",
+                      corpo["domain"], corpo["call_uuid"])
         return
 
     try:

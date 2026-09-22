@@ -74,6 +74,65 @@ class api_dominio {
 		];
 	}
 
+	/**
+	 * Gera as chaves para um domínio que já existe.
+	 *
+	 * O FusionPBX é multi-tenant e o domínio pode ter nascido pela tela dele --
+	 * cliente que comprou só PABX, por exemplo. Sem isto, esse cliente nunca
+	 * vira cliente do painel: `criar` recusa domínio existente com 409, e a
+	 * saída seria escrever as duas chaves no banco à mão.
+	 *
+	 * Idempotente: chamar de novo devolve as chaves que já existem em vez de
+	 * rotacionar. Rotacionar aqui derrubaria a conexão que o painel já usa.
+	 */
+	public static function adotar(array $dados): array {
+		$nome = trim((string) ($dados['dominio'] ?? ''));
+		if ($nome === '') {
+			responde(['erro' => 'dominio é obrigatório'], 422);
+		}
+
+		$db = self::db();
+		$domain_uuid = $db->select(
+			"select domain_uuid from v_domains where domain_name = :d",
+			['d' => $nome], 'column'
+		);
+		if (empty($domain_uuid)) {
+			responde(['erro' => "domínio $nome não existe; use POST /dominio para criar"], 404);
+		}
+
+		$chave = self::ajuste_existente($db, $domain_uuid, 'api_key');
+		if ($chave === null) {
+			$chave = bin2hex(random_bytes(24));
+			self::guardar_ajuste($db, $domain_uuid, 'api_key', $chave,
+				'Chave da API consumida pelo painel do SimplificaJá');
+		}
+
+		$segredo = self::ajuste_existente($db, $domain_uuid, 'webhook_secret');
+		if ($segredo === null) {
+			$segredo = bin2hex(random_bytes(24));
+			self::guardar_ajuste($db, $domain_uuid, 'webhook_secret', $segredo,
+				'Segredo que o gancho de desligamento manda ao SimplificaJá');
+		}
+
+		return [
+			'domain_uuid'    => $domain_uuid,
+			'dominio'        => $nome,
+			'api_key'        => $chave,
+			'webhook_secret' => $segredo,
+			'adotado'        => true,
+		];
+	}
+
+	private static function ajuste_existente($db, string $domain_uuid, string $chave): ?string {
+		$valor = $db->select(
+			"select domain_setting_value from v_domain_settings "
+			."where domain_uuid = :u and domain_setting_category = 'simplificaja' "
+			."and domain_setting_subcategory = :s and domain_setting_enabled = true limit 1",
+			['u' => $domain_uuid, 's' => $chave], 'column'
+		);
+		return empty($valor) ? null : (string) $valor;
+	}
+
 	public static function remover(array $dados): array {
 		$nome = trim((string) ($dados['dominio'] ?? ''));
 		if ($nome === '') {
