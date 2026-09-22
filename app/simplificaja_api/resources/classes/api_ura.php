@@ -125,7 +125,8 @@ class api_ura {
 				'domain_uuid'             => $domain_uuid,
 				'ivr_menu_option_digits'  => (string) $opcao['digito'],
 				'ivr_menu_option_action'  => 'menu-exec-app',
-				'ivr_menu_option_param'   => 'transfer ' . $opcao['destino'] . ' XML ' . $dominio,
+				'ivr_menu_option_param'   => self::acao_da_opcao($domain_uuid, $dominio,
+					(string) $opcao['destino'], (int) ($dados['espera_ramal'] ?? 25)),
 				'ivr_menu_option_order'   => (string) (($i + 1) * 10),
 				'ivr_menu_option_enabled' => 'true',
 				'ivr_menu_option_description' => $opcao['descricao'] ?? '',
@@ -149,6 +150,41 @@ class api_ura {
 		];
 	}
 
+	/**
+	 * O que a tecla faz. A diferença entre `transfer` e `bridge` aqui é a
+	 * diferença entre a ligação cair no silêncio e a pessoa ouvir o menu de
+	 * novo.
+	 *
+	 * `transfer` entrega a chamada e encerra a URA: se o ramal está fora do ar,
+	 * o bridge do `local_extension` falha, não há para onde voltar e a linha
+	 * morre sem áudio nenhum -- medido numa ligação real, 40ms entre o bridge e
+	 * o hangup.
+	 *
+	 * `bridge` mantém a URA no comando: o app volta quando a chamada não
+	 * completa, e o `ivr` repete as opções. O teto de repetições é o
+	 * `ivr_menu_max_failures` que já existe, então isto não abre loop infinito.
+	 *
+	 * Grupo e outra URA continuam com `transfer`: são rotas do dialplan, não
+	 * usuários, e o grupo tem o próprio destino de "ninguém atendeu".
+	 */
+	private static function acao_da_opcao(string $domain_uuid, string $dominio,
+		string $destino, int $espera): string {
+
+		$e_ramal = self::db()->select(
+			"select extension_uuid from v_extensions where domain_uuid = :u and extension = :e",
+			['u' => $domain_uuid, 'e' => $destino], 'column'
+		);
+		if (empty($e_ramal)) {
+			return 'transfer ' . $destino . ' XML ' . $dominio;
+		}
+
+		// `confirm=false` porque quem atende é o dono do ramal, não uma fila
+		// que precisa aceitar; `leg_timeout` é o tanto que o telefone toca
+		// antes de a URA retomar.
+		return sprintf('bridge {leg_timeout=%d,confirm=false}user/%s@%s',
+			$espera, $destino, $dominio);
+	}
+
 	/** O XML à mão, como eles fazem. `answer` antes do `ivr` porque URA sem
 	 *  atender não toca áudio. */
 	private static function dialplan(string $domain_uuid, string $dialplan_uuid,
@@ -159,8 +195,29 @@ class api_ura {
 		$xml .= '	<condition field="destination_number" expression="^' . $ramal . '$">' . "\n";
 		$xml .= '		<action application="answer" data=""/>' . "\n";
 		$xml .= '		<action application="sleep" data="500"/>' . "\n";
+		// As duas variaveis que fazem a opcao voltar ao menu em vez de matar a
+		// ligacao. Medido: sem `continue_on_fail`, o `bridge` para um ramal
+		// fora do ar derruba o canal com USER_NOT_REGISTERED e quem ligou ouve
+		// a linha morrer. Sem `hangup_after_bridge`, o caminho feliz e que fica
+		// errado -- terminada a conversa, o `ivr` retoma e a pessoa ouve o menu
+		// de novo depois de ja ter sido atendida.
+		//
+		// Vao no canal, antes do `ivr`: sao variaveis de quem origina, entao
+		// dentro das chaves do `bridge` nao valem -- la so entra o que e' da
+		// perna de destino.
+		$xml .= '		<action application="set" data="continue_on_fail=true"/>' . "\n";
+		$xml .= '		<action application="set" data="hangup_after_bridge=true"/>' . "\n";
 		$xml .= '		<action application="set" data="ivr_menu_uuid=' . xml::sanitize($ivr_menu_uuid) . '"/>' . "\n";
 		$xml .= '		<action application="ivr" data="' . xml::sanitize($ivr_menu_uuid) . '"/>' . "\n";
+		// O `ivr` devolve o controle quando estoura o limite de tentativas, e
+		// sem acao depois dele o canal simplesmente cai -- a tela promete "se
+		// nao digitar, vai para X" e nao acontecia nada. No caminho feliz esta
+		// linha nao e alcancada: `hangup_after_bridge` encerra a ligacao assim
+		// que a conversa termina.
+		if (!empty($dados['saida'])) {
+			$xml .= '		<action application="transfer" data="'
+				. xml::sanitize((string) $dados['saida']) . ' XML ' . xml::sanitize($dominio) . '"/>' . "\n";
+		}
 		$xml .= '	</condition>' . "\n";
 		$xml .= '</extension>' . "\n";
 

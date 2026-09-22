@@ -214,18 +214,34 @@ class api_leitura {
 				if ($opcao['ivr_menu_uuid'] === $ura['ivr_menu_uuid']) {
 					$ura['opcoes'][] = [
 						'digito'  => $opcao['ivr_menu_option_digits'],
-						'destino' => self::numero_do_transfer($opcao['ivr_menu_option_param']),
+						'destino' => self::numero_do_destino($opcao['ivr_menu_option_param']),
 					];
 				}
 			}
-			$ura['saida'] = self::numero_do_transfer($ura['ivr_menu_exit_data']);
+			$ura['saida'] = self::numero_do_destino($ura['ivr_menu_exit_data']);
 		}
 		return $uras;
 	}
 
-	/** `transfer 1001 XML cliente.pabx...` -> `1001`. */
-	private static function numero_do_transfer(?string $param): ?string {
-		$partes = preg_split('/\s+/', trim((string) $param));
+	/**
+	 * O número dentro do que a opção da URA executa. São duas formas, e a
+	 * tela precisa das duas:
+	 *
+	 *   transfer 1001 XML cliente.pabx...                 -> 1001
+	 *   bridge {leg_timeout=25,...}user/1001@cliente...   -> 1001
+	 *
+	 * Ramal usa `bridge` para a URA poder retomar quando ninguém atende;
+	 * grupo e outra URA usam `transfer`, que são rotas do dialplan.
+	 */
+	private static function numero_do_destino(?string $param): ?string {
+		$texto = trim((string) $param);
+		if ($texto === '') {
+			return null;
+		}
+		if (preg_match('~user/([^@]+)@~', $texto, $m)) {
+			return $m[1];
+		}
+		$partes = preg_split('/\s+/', $texto);
 		$numero = $partes[0] === 'transfer' ? ($partes[1] ?? '') : ($partes[0] ?? '');
 		return $numero === '' ? null : $numero;
 	}
