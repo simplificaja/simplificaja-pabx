@@ -267,6 +267,35 @@ class api_leitura {
 		return ['gravacao' => $arquivo, 'audio' => $linha['recording_base64']];
 	}
 
+	/**
+	 * A credencial SIP de um ramal, para o painel vincular ao atendente e o
+	 * softphone do navegador registrar.
+	 *
+	 * A senha vem em claro porque o SIP digest exige: o FusionPBX a guarda
+	 * assim, nao por descuido. O que protege aqui e a mesma coisa que protege
+	 * criar ramal -- a chave e do dominio, e o nginx so aceita a VPS de
+	 * producao.
+	 *
+	 * Existe para vincular ramal que JA existe sem recriar. Recriar geraria
+	 * senha nova e derrubaria o softphone que estiver registrado nele.
+	 */
+	public static function credencial(string $domain_uuid, string $ramal): array {
+		$linha = self::db()->select(
+			"select extension, password, description from v_extensions "
+			."where domain_uuid = :u and extension = :e",
+			['u' => $domain_uuid, 'e' => $ramal], 'row'
+		);
+		if (empty($linha)) {
+			responde(['erro' => "ramal $ramal nao existe neste cliente"], 404);
+		}
+		return [
+			'extension' => $linha['extension'],
+			'senha'     => $linha['password'],
+			'nome'      => $linha['description'],
+			'dominio'   => self::nome_do_dominio($domain_uuid),
+		];
+	}
+
 	public static function gravacoes(string $domain_uuid): array {
 		return self::db()->select(
 			"select recording_filename, recording_name, recording_description, "

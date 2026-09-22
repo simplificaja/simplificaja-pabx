@@ -76,6 +76,13 @@
 		case 'GET ramais':
 			responde(api_leitura::ramais($domain_uuid));
 
+		// A credencial de UM ramal. Fora da listagem de proposito: senha nao
+		// viaja em lista que a tela carrega a cada abertura.
+		case 'GET ramal-credencial':
+			$numero = trim((string) ($_GET['extension'] ?? ''));
+			if ($numero === '') { responde(['erro' => 'extension é obrigatório'], 422); }
+			responde(api_leitura::credencial($domain_uuid, $numero));
+
 		case 'GET troncos':
 			responde(api_leitura::troncos($domain_uuid));
 
