@@ -162,6 +162,35 @@ class api_saida {
 		$detalhes[] = $linha('action', 'export', 'call_direction=outbound', '010', true);
 		$detalhes[] = $linha('action', 'set', 'effective_caller_id_number=' . $caller_id, '015', true);
 		$detalhes[] = $linha('action', 'set', 'effective_caller_id_name=' . $caller_id, '020', true);
+		// As duas linhas abaixo existem por causa do MTU, nao por gosto.
+		//
+		// A operadora exige autenticacao no INVITE, e o cabecalho `Authorization`
+		// -- ~300 bytes -- empurra a mensagem para alem de 1500. O pacote
+		// fragmenta e o SBC dela descarta fragmento: a chamada some sem 403,
+		// sem 486, sem nada. Medido no fio, com tcpdump.
+		//
+		// `sip_cid_type=none` tira o `Remote-Party-ID` (84 bytes). Perder o
+		// cabecalho nao perde o identificador: a operadora preenche pelo
+		// cadastro da conta, e o numero que chega no visor e o mesmo -- conferido
+		// em ligacao real. O `effective_caller_id_number` acima continua valendo
+		// para o nosso lado (CDR e o `from` que o registrador manda).
+		//
+		// `absolute_codec_string=PCMA` tira o opus da oferta, que sozinho custa
+		// ~220 bytes de SDP. A-law e' o que a operadora responde de fato, nas
+		// tres chamadas que completaram. Incluir PCMU tambem cabia (1461), mas
+		// deixava 11 bytes de folga -- ver abaixo por que isso nao serve.
+		//
+		// Medido no caminho real: 1437 bytes contra 1472 uteis. A folga de 35
+		// bytes nao e' zelo: o `nonce` do desafio varia de tamanho -- medi 292 e
+		// 306 bytes em desafios diferentes -- e uma versao com 11 bytes de
+		// margem passaria nos testes e quebraria sozinha num dia qualquer, sem
+		// ninguem ligar o sintoma a esta linha.
+		//
+		// `export` e nao `set`: variavel posta com `set` fica no canal do ramal,
+		// e quem monta o INVITE e a perna do tronco. Medido -- com `set` as duas
+		// linhas existem no XML, executam, e o pacote sai identico ao de antes.
+		$detalhes[] = $linha('action', 'export', 'sip_cid_type=none', '022', true);
+		$detalhes[] = $linha('action', 'export', 'absolute_codec_string=PCMA', '023', true);
 		// Sem isto a perna do ramal sobrevive ao fim da conversa e fica muda.
 		$detalhes[] = $linha('action', 'set', 'hangup_after_bridge=true', '025', true);
 		$detalhes[] = $linha('action', 'bridge',
