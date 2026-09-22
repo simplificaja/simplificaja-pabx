@@ -18,6 +18,7 @@
 	require __DIR__ . "/resources/classes/api_ura.php";
 	require __DIR__ . "/resources/classes/api_gravacao.php";
 	require __DIR__ . "/resources/classes/api_grupo.php";
+	require __DIR__ . "/resources/classes/api_saida.php";
 
 	header('Content-Type: application/json; charset=utf-8');
 
@@ -123,6 +124,15 @@
 			$nome = trim((string) (corpo()['nome'] ?? ''));
 			if ($nome === '') { responde(['erro' => 'nome é obrigatório'], 422); }
 			responde(api_gravacao::remover($domain_uuid, $nome));
+
+		case 'GET saida':
+			responde(api_saida::ler($domain_uuid));
+
+		case 'POST saida':
+			responde(api_saida::criar($domain_uuid, corpo()), 201);
+
+		case 'DELETE saida':
+			responde(api_saida::remover($domain_uuid));
 
 		case 'GET grupos':
 			responde(api_leitura::grupos($domain_uuid));

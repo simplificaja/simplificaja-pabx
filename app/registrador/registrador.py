@@ -197,10 +197,18 @@ def montar(evento):
     # O número que a operadora discou, não o ramal que atendeu: depois da URA
     # ou do bridge, `Caller-Destination-Number` já vale outra coisa e a caixa
     # de entrada nunca casa.
+    # Na saida quem liga e' a empresa, entao `from` tem que ser o numero que
+    # ela apresenta -- o mesmo que a rota de saida poe no visor de quem recebe.
+    # O caller id cru aqui e' o ramal (`1001`), que nao identifica caixa de
+    # entrada nenhuma: a chamada seria descartada por falta de inbox.
+    saindo = campo("Call-Direction", "variable_call_direction") == "outbound"
+    origem = (["variable_effective_caller_id_number", "Caller-Caller-ID-Number"]
+              if saindo else ["Caller-Caller-ID-Number", "variable_caller_id_number"])
+
     return {
         "domain": campo("variable_domain_name"),
         "direction": campo("Call-Direction", "variable_call_direction"),
-        "from": campo("Caller-Caller-ID-Number", "variable_caller_id_number"),
+        "from": campo(*origem),
         "to": campo("variable_caller_destination", "Caller-Destination-Number"),
         "extension": campo("variable_dialed_extension"),
         "call_uuid": campo("variable_call_uuid", "Unique-ID"),
