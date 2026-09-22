@@ -111,7 +111,21 @@ class EventSocket:
         self.buffer = b""
 
     def conectar(self):
-        self.sock = socket.create_connection((FS_HOST, FS_PORT), timeout=30)
+        self.sock = socket.create_connection((FS_HOST, FS_PORT), timeout=10)
+        # O timeout do `create_connection` nao vale so para o connect: ele fica
+        # no socket e passa a valer para todo `recv` seguinte. Um socket de
+        # eventos fica ocioso por natureza -- 30s sem chamada nenhuma e o recv
+        # estourava, o loop tratava como queda e reconectava. Eram 114
+        # reconexoes por hora, com ~1s sem ouvinte a cada uma: chamada que
+        # desliga nessa janela nunca vira conversa, e nada no log acusa.
+        self.sock.settimeout(None)
+        # Quem detecta queda de verdade -- peer morto sem FIN -- e o keepalive
+        # do TCP, nao um timeout de leitura. Socket fechado limpo continua
+        # aparecendo como `recv` devolvendo vazio, que o codigo ja trata.
+        self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for opcao, valor in (("TCP_KEEPIDLE", 60), ("TCP_KEEPINTVL", 10), ("TCP_KEEPCNT", 3)):
+            if hasattr(socket, opcao):
+                self.sock.setsockopt(socket.IPPROTO_TCP, getattr(socket, opcao), valor)
         self.buffer = b""
         self._ler_bloco()  # auth/request
         self._enviar(f"auth {FS_SENHA}")
@@ -197,11 +211,20 @@ def montar(evento):
 
 
 def registrar(sessao, segredos, evento):
-    # Uma ligação gera várias pernas -- a da operadora, a do anúncio, a da URA,
-    # a do ramal. A dona da chamada é a única cujo `Unique-ID` é o próprio
-    # `call_uuid`; as filhas carregam o dela. Sem isto, uma ligação que passa
-    # por URA viraria uma conversa por perna.
-    if evento.get("Unique-ID") != evento.get("variable_call_uuid"):
+    # Uma ligação gera várias pernas -- a da operadora, a da URA, a do ramal --
+    # e só a dona pode virar conversa.
+    #
+    # NÃO dá para comparar `Unique-ID` com `variable_call_uuid`: a perna que o
+    # `bridge` cria para `user/<ramal>` ganha `call_uuid` PRÓPRIO, então ela
+    # passa por essa comparação como se fosse dona. Medido numa ligação real:
+    # a mesma chamada entregou dois webhooks, `0861e750` (a de verdade) e
+    # `65709868` (a do ramal).
+    #
+    # O que separa de fato é `originating_leg_uuid`: quem foi originado por
+    # outra perna o carrega, quem nasceu de um INVITE não. Vale nos dois
+    # sentidos -- na entrada a dona é a da operadora, na saída é a do ramal, e
+    # em ambos a filha é a que tem o campo.
+    if evento.get("variable_originating_leg_uuid"):
         return
     if evento.get("Call-Direction") not in ("inbound", "outbound"):
         return
