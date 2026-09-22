@@ -11,22 +11,32 @@
 -- Os arquivos de imagem vão para /var/www/fusionpbx/themes/simplificaja/images/
 -- (ver marca.sh).
 
--- ── linhas que já existem: trocar o valor ──
-update v_default_settings set default_setting_value = 'SimplificaJá'
+-- ── linhas que já existem: trocar o valor E habilitar ──
+--
+-- `default_setting_enabled` importa tanto quanto o valor: o `settings->get()`
+-- ignora linha desabilitada e cai no padrão do FusionPBX. As linhas de marca
+-- nascem desabilitadas, então trocar só o valor não muda nada na tela -- e o
+-- sintoma é silencioso, porque o SQL responde `UPDATE 1` do mesmo jeito.
+update v_default_settings
+   set default_setting_value = 'SimplificaJá', default_setting_enabled = true
  where default_setting_category = 'theme' and default_setting_subcategory = 'title';
 
-update v_default_settings set default_setting_value = '/themes/simplificaja/images/logo.svg'
+update v_default_settings
+   set default_setting_value = '/themes/simplificaja/images/logo.svg', default_setting_enabled = true
  where default_setting_category = 'theme' and default_setting_subcategory = 'menu_side_brand_image_expanded';
 
-update v_default_settings set default_setting_value = '/themes/simplificaja/images/logo_thumbnail.svg'
+update v_default_settings
+   set default_setting_value = '/themes/simplificaja/images/logo_thumbnail.svg', default_setting_enabled = true
  where default_setting_category = 'theme' and default_setting_subcategory = 'menu_side_brand_image_contracted';
 
-update v_default_settings set default_setting_value = '#5c2ee6'
+update v_default_settings
+   set default_setting_value = '#5c2ee6', default_setting_enabled = true
  where default_setting_category = 'theme'
    and default_setting_subcategory in ('button_background_color', 'button_background_color_bottom',
                                        'text_link_color', 'dashboard_label_background_color');
 
-update v_default_settings set default_setting_value = '#4a22bd'
+update v_default_settings
+   set default_setting_value = '#4a22bd', default_setting_enabled = true
  where default_setting_category = 'theme'
    and default_setting_subcategory in ('button_background_color_hover',
                                        'button_background_color_bottom_hover',
