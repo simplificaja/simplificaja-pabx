@@ -146,6 +146,54 @@ class api_leitura {
 		return $grupos;
 	}
 
+	/**
+	 * Filas com quem atende dentro.
+	 *
+	 * `tier_position` é a ordem de entrega nas estratégias sequenciais e não
+	 * significa nada em `ring-all` -- ordenar por ela serve aos dois casos.
+	 */
+	public static function filas(string $domain_uuid): array {
+		$db = self::db();
+		$filas = $db->select(
+			"select q.call_center_queue_uuid, q.queue_name, q.queue_extension, "
+			."q.queue_strategy, q.queue_max_wait_time, q.queue_timeout_action, "
+			."q.queue_description, "
+			."coalesce(length(p.dialplan_xml), 0) as xml_bytes "
+			."from v_call_center_queues q left join v_dialplans p on p.dialplan_uuid = q.dialplan_uuid "
+			."where q.domain_uuid = :u order by q.queue_extension",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+		if (empty($filas)) {
+			return [];
+		}
+
+		$membros = $db->select(
+			"select call_center_queue_uuid, agent_name, tier_position "
+			."from v_call_center_tiers where domain_uuid = :u "
+			."order by tier_position, agent_name",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+
+		$nomes = self::nomes_dos_ramais($domain_uuid);
+		$registrados = self::registrados(self::nome_do_dominio($domain_uuid));
+
+		foreach ($filas as &$fila) {
+			$fila['ramais'] = [];
+			foreach ($membros as $membro) {
+				if ($membro['call_center_queue_uuid'] !== $fila['call_center_queue_uuid']) {
+					continue;
+				}
+				$numero = $membro['agent_name'];
+				$fila['ramais'][] = [
+					'extension'   => $numero,
+					'description' => $nomes[$numero] ?? null,
+					'registrado'  => in_array($numero, $registrados, true),
+				];
+			}
+		}
+		return $filas;
+	}
+
 	private static function nomes_dos_ramais(string $domain_uuid): array {
 		$linhas = self::db()->select(
 			"select extension, description from v_extensions where domain_uuid = :u",

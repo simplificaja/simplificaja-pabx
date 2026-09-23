@@ -87,18 +87,24 @@ class api_ramal {
 		];
 	}
 
+	/** Mínimo de caracteres numa senha escolhida à mão. Não é gosto: a
+	 *  credencial fica exposta na internet e é varrida por robô -- a primeira
+	 *  varredura a este PABX chegou 13 minutos depois da instalação. */
+	const MINIMO_DA_SENHA = 8;
+
 	/**
-	 * Gera uma senha nova para um ramal que já existe.
+	 * Troca a senha de um ramal. Aceita uma escolhida, ou gera se não vier.
 	 *
-	 * Não aceita senha escolhida, de propósito: credencial SIP fica exposta na
-	 * internet e a primeira varredura a este PABX chegou 13 minutos depois da
-	 * instalação. Quem escolhe escolhe curto.
+	 * O que NÃO se aceita são caracteres que quebram o registro, e isso não é
+	 * política: a senha entra no XML do diretório que o FreeSWITCH lê, e aspas,
+	 * sinais de maior/menor e `&` corrompem o documento. Espaço e `:` atrapalham
+	 * o digest. O ramal deixaria de registrar sem erro que aponte para cá.
 	 *
 	 * Grava pelas classes do FusionPBX e limpa `directory:<ramal>@<domínio>`,
 	 * como a criação faz -- o diretório servido ao FreeSWITCH sai do cache, e
 	 * sem limpar o ramal continua aceitando a senha velha até o cache expirar.
 	 */
-	public static function trocar_senha(string $domain_uuid, string $numero): array {
+	public static function trocar_senha(string $domain_uuid, string $numero, ?string $escolhida = null): array {
 		$db = self::db();
 		$linha = $db->select(
 			"select extension_uuid from v_extensions where domain_uuid = :u and extension = :e",
@@ -110,7 +116,9 @@ class api_ramal {
 
 		$dominio = $db->select("select domain_name from v_domains where domain_uuid = :u",
 			['u' => $domain_uuid], 'column');
-		$senha = self::senha();
+		$senha = $escolhida === null || $escolhida === ''
+			? self::senha()
+			: self::validar_senha($escolhida);
 
 		$p = permissions::new();
 		$p->add('extension_edit', 'temp');
@@ -156,6 +164,19 @@ class api_ramal {
 	}
 
 	/** Senha aleatória sem caracteres que atrapalham em configuração de softphone. */
+	private static function validar_senha(string $senha): string {
+		if (mb_strlen($senha) < self::MINIMO_DA_SENHA) {
+			responde(['erro' => 'a senha precisa de pelo menos '
+				. self::MINIMO_DA_SENHA . ' caracteres'], 422);
+		}
+		if (preg_match('/["<>&:\s]/', $senha)) {
+			responde(['erro' => 'a senha não pode ter espaço, dois-pontos, '
+				. 'aspas, & ou sinais de maior/menor -- eles quebram o registro '
+				. 'do ramal'], 422);
+		}
+		return $senha;
+	}
+
 	private static function senha(): string {
 		$alfabeto = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 		$senha = '';

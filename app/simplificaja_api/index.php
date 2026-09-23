@@ -18,6 +18,7 @@
 	require __DIR__ . "/resources/classes/api_ura.php";
 	require __DIR__ . "/resources/classes/api_gravacao.php";
 	require __DIR__ . "/resources/classes/api_grupo.php";
+	require __DIR__ . "/resources/classes/api_fila.php";
 	require __DIR__ . "/resources/classes/api_saida.php";
 
 	header('Content-Type: application/json; charset=utf-8');
@@ -100,9 +101,12 @@
 		// Troca a senha de um ramal. POST e nao PATCH porque nao se envia a
 		// senha: ela e gerada aqui.
 		case 'POST ramal-senha':
-			$numero = trim((string) (corpo()['extension'] ?? ''));
+			$corpo = corpo();
+			$numero = trim((string) ($corpo['extension'] ?? ''));
 			if ($numero === '') { responde(['erro' => 'extension é obrigatório'], 422); }
-			responde(api_ramal::trocar_senha($domain_uuid, $numero));
+			// Sem `senha` no corpo, gera uma.
+			responde(api_ramal::trocar_senha($domain_uuid, $numero,
+				isset($corpo['senha']) ? (string) $corpo['senha'] : null));
 
 		case 'POST troncos':
 			responde(api_tronco::criar($domain_uuid, corpo()), 201);
@@ -151,6 +155,17 @@
 
 		case 'DELETE saida':
 			responde(api_saida::remover($domain_uuid));
+
+		case 'GET filas':
+			responde(api_leitura::filas($domain_uuid));
+
+		case 'POST filas':
+			responde(api_fila::criar($domain_uuid, corpo()), 201);
+
+		case 'DELETE filas':
+			$ramal = trim((string) (corpo()['ramal'] ?? ''));
+			if ($ramal === '') { responde(['erro' => 'ramal é obrigatório'], 422); }
+			responde(api_fila::remover($domain_uuid, $ramal));
 
 		case 'GET grupos':
 			responde(api_leitura::grupos($domain_uuid));
