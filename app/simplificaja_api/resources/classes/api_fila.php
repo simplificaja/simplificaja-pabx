@@ -121,6 +121,29 @@ class api_fila {
 		return $uuid;
 	}
 
+	/**
+	 * O "Olá, bem-vindo à empresa X, aguarde" que toca antes da música.
+	 *
+	 * Fila sem saudação atende e cai direto na espera: quem ligou fica ouvindo
+	 * música sem saber se chegou no lugar certo. Quando a fila vem depois de
+	 * uma URA a saudação já foi dada lá, e aí este campo fica vazio de
+	 * propósito.
+	 */
+	private static function caminho_do_audio(string $dominio, string $arquivo): string {
+		$socket = event_socket::create();
+		$base = ($socket && $socket->is_connected())
+			? trim((string) event_socket::api('global_getvar recordings_dir'))
+			: '';
+		if ($base === '') {
+			responde(['erro' => 'FreeSWITCH não respondeu onde ficam as gravações'], 500);
+		}
+		$caminho = rtrim($base, '/') . '/' . $dominio . '/' . $arquivo;
+		if (!file_exists($caminho)) {
+			responde(['erro' => "gravação $arquivo não existe neste domínio"], 422);
+		}
+		return $caminho;
+	}
+
 	private static function contato(string $dominio, string $ramal): string {
 		return '{call_timeout=' . self::TOQUE . ',sip_invite_domain=' . $dominio . '}'
 			. 'user/' . $ramal . '@' . $dominio;
@@ -143,6 +166,10 @@ class api_fila {
 		$db = self::db();
 		$dominio = self::nome_do_dominio($domain_uuid);
 		self::exigir_numero_livre($domain_uuid, $ramal);
+
+		$saudacao = empty($dados['saudacao'])
+			? ''
+			: self::caminho_do_audio($dominio, (string) $dados['saudacao']);
 
 		$existentes = $db->select(
 			"select extension from v_extensions where domain_uuid = :u",
@@ -180,9 +207,11 @@ class api_fila {
 			'queue_timeout_action'              => self::estouro($dados, $dominio),
 			'queue_cid_prefix'                  => $nome,
 			'queue_context'                     => $dominio,
+			'queue_greeting'                    => $saudacao,
 			'queue_description'                 => (string) ($dados['descricao'] ?? ''),
 		];
-		$array['dialplans'][0] = self::dialplan($domain_uuid, $dialplan_uuid, $fila_uuid, $nome, $ramal, $dominio, $dados);
+		$array['dialplans'][0] = self::dialplan($domain_uuid, $dialplan_uuid, $fila_uuid,
+			$nome, $ramal, $dominio, $dados, $saudacao);
 		$db->save($array);
 		unset($array);
 
@@ -249,7 +278,7 @@ class api_fila {
 	/** O XML à mão, como eles fazem na tela de fila. O `callcenter` é chamado
 	 *  pelo NÚMERO da fila, não pelo nome: o nome é só rótulo no painel. */
 	private static function dialplan(string $domain_uuid, string $dialplan_uuid, string $fila_uuid,
-		string $nome, string $ramal, string $dominio, array $dados): array {
+		string $nome, string $ramal, string $dominio, array $dados, string $saudacao): array {
 
 		$xml  = '<extension name="' . xml::sanitize($nome) . '" continue="" uuid="' . xml::sanitize($dialplan_uuid) . '">' . "\n";
 		$xml .= '	<condition field="destination_number" expression="^([^#]+#)(.*)$" break="never">' . "\n";
@@ -261,6 +290,12 @@ class api_fila {
 		$xml .= '		<action application="set" data="queue_extension=' . xml::sanitize($ramal) . '"/>' . "\n";
 		$xml .= '		<action application="set" data="hangup_after_bridge=true"/>' . "\n";
 		$xml .= '		<action application="set" data="record_stereo=true"/>' . "\n";
+		if ($saudacao !== '') {
+			// O `sleep` é dos dois lados: sem ele o começo do áudio some,
+			// porque o outro lado ainda está abrindo o canal de voz.
+			$xml .= '		<action application="sleep" data="1000"/>' . "\n";
+			$xml .= '		<action application="playback" data="' . xml::sanitize($saudacao) . '"/>' . "\n";
+		}
 		$xml .= '		<action application="callcenter" data="' . xml::sanitize($ramal) . '@' . $dominio . '"/>' . "\n";
 
 		$estouro = trim((string) ($dados['estouro'] ?? ''));
