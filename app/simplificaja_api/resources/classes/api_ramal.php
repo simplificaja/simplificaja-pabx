@@ -151,16 +151,148 @@ class api_ramal {
 		$dominio = $db->select("select domain_name from v_domains where domain_uuid = :u",
 			['u' => $domain_uuid], 'column');
 
+		self::exigir_que_nao_seja_o_ultimo($domain_uuid, $numero);
+		self::exigir_que_nao_esteja_no_fluxo($domain_uuid, $numero);
+		$vinculos = self::vinculos_de_fila($domain_uuid, $numero);
+
 		$p = permissions::new();
-		$p->add('extension_delete', 'temp');
+		$permissoes = ['extension_delete', 'ring_group_destination_delete',
+			'call_center_agent_delete', 'call_center_tier_delete'];
+		foreach ($permissoes as $permissao) {
+			$p->add($permissao, 'temp');
+		}
+
+		// O ramal sai dos grupos e das filas de que participava. Grupo e fila
+		// continuam existindo: sai quem saiu, nao o departamento.
+		$db->execute("delete from v_ring_group_destinations "
+			."where domain_uuid = :u and destination_number = :e",
+			['u' => $domain_uuid, 'e' => $numero]);
+		foreach ($vinculos as $vinculo) {
+			$db->execute("delete from v_call_center_tiers where call_center_agent_uuid = :a",
+				['a' => $vinculo['call_center_agent_uuid']]);
+			$db->execute("delete from v_call_center_agents where call_center_agent_uuid = :a",
+				['a' => $vinculo['call_center_agent_uuid']]);
+		}
 		$db->execute("delete from v_extensions where extension_uuid = :x",
 			['x' => $linha['extension_uuid']]);
-		$p->delete('extension_delete', 'temp');
+
+		foreach ($permissoes as $permissao) {
+			$p->delete($permissao, 'temp');
+		}
 
 		$cache = new cache();
 		$cache->delete('directory:' . $numero . '@' . $dominio);
+		$cache->delete('dialplan:' . $dominio);
+		api_fila::limpar_config('configuration:callcenter.conf');
+
+		// O mod_callcenter guarda o vinculo em memoria propria: apagar so no
+		// banco deixa a fila entregando ligacao para um ramal que nao existe
+		// mais, e a ligacao nao toca em lugar nenhum.
+		$socket = event_socket::create();
+		if ($socket && $socket->is_connected()) {
+			foreach ($vinculos as $vinculo) {
+				event_socket::api("callcenter_config tier del " . $vinculo['queue_extension']
+					. "@$dominio " . $vinculo['call_center_agent_uuid']);
+				event_socket::api("callcenter_config agent del " . $vinculo['call_center_agent_uuid']);
+			}
+			event_socket::api('reloadxml');
+		}
 
 		return ['extension' => $numero, 'removido' => true];
+	}
+
+	/**
+	 * Recusa apagar ramal que uma tecla de URA ou um número de entrada apontam.
+	 *
+	 * Grupo e fila nao entram aqui: deles o ramal simplesmente sai, e o
+	 * atendimento continua com quem ficou. Ja a tecla e o numero apontam para
+	 * ELE -- apagar deixa a opcao existindo e levando a lugar nenhum, que e
+	 * silencio na linha de quem ligou.
+	 */
+	private static function exigir_que_nao_esteja_no_fluxo(string $domain_uuid, string $numero): void {
+		$db = self::db();
+		$usos = [];
+
+		$teclas = $db->select(
+			"select m.ivr_menu_name, o.ivr_menu_option_digits as digito "
+			."from v_ivr_menu_options o "
+			."join v_ivr_menus m on m.ivr_menu_uuid = o.ivr_menu_uuid "
+			."where m.domain_uuid = :u and o.ivr_menu_option_param like :p",
+			['u' => $domain_uuid, 'p' => '%' . $numero . '%'], 'all'
+		) ?? [];
+		foreach ($teclas as $tecla) {
+			$usos[] = 'a tecla ' . $tecla['digito'] . ' do menu ' . $tecla['ivr_menu_name'];
+		}
+
+		$saidas = $db->select(
+			"select ivr_menu_name from v_ivr_menus "
+			."where domain_uuid = :u and ivr_menu_exit_data like :p",
+			['u' => $domain_uuid, 'p' => $numero . ' %'], 'all'
+		) ?? [];
+		foreach ($saidas as $saida) {
+			$usos[] = 'o menu ' . $saida['ivr_menu_name'] . ' quando não digitam nada';
+		}
+
+		$numeros = $db->select(
+			"select d.dialplan_number from v_dialplans d "
+			."join v_dialplan_details t on t.dialplan_uuid = d.dialplan_uuid "
+			."where d.domain_uuid = :u and t.dialplan_detail_type = 'transfer' "
+			."and t.dialplan_detail_data like :p and d.app_uuid = :a",
+			['u' => $domain_uuid, 'p' => $numero . ' %',
+			 'a' => 'c03b422e-13a2-bcd8-e895-8a9782ae1f3e'], 'all'
+		) ?? [];
+		foreach ($numeros as $entrada) {
+			$usos[] = 'o número ' . $entrada['dialplan_number'];
+		}
+
+		if (empty($usos)) {
+			return;
+		}
+
+		responde(['erro' => "o ramal $numero ainda recebe ligação por: " . implode('; ', $usos)
+			. '. Mude o destino antes de apagar, senão quem ligar cai no silêncio'], 409);
+	}
+
+	/** Em quais filas o ramal atende, com o uuid do atendente. */
+	private static function vinculos_de_fila(string $domain_uuid, string $numero): array {
+		return self::db()->select(
+			"select t.call_center_agent_uuid, q.queue_extension "
+			."from v_call_center_tiers t "
+			."join v_call_center_agents a on a.call_center_agent_uuid = t.call_center_agent_uuid "
+			."join v_call_center_queues q on q.call_center_queue_uuid = t.call_center_queue_uuid "
+			."where t.domain_uuid = :u and a.agent_name = :e",
+			['u' => $domain_uuid, 'e' => $numero], 'all'
+		) ?? [];
+	}
+
+	/**
+	 * Recusa apagar quem e o unico de uma fila.
+	 *
+	 * Fila sem atendente nao devolve erro: segura quem ligou na musica ate
+	 * estourar o tempo. Quem apaga o ramal nao tem como ver isso acontecendo,
+	 * entao a recusa aqui e o unico aviso possivel.
+	 */
+	private static function exigir_que_nao_seja_o_ultimo(string $domain_uuid, string $numero): void {
+		// O `where` filtra o proprio ramal, entao contar as linhas do grupo
+		// daria sempre 1. Quem precisa ser contado e o total de atendentes da
+		// fila, numa subconsulta que nao passa por esse filtro.
+		$sozinho = self::db()->select(
+			"select q.queue_name from v_call_center_queues q "
+			."join v_call_center_tiers t on t.call_center_queue_uuid = q.call_center_queue_uuid "
+			."join v_call_center_agents a on a.call_center_agent_uuid = t.call_center_agent_uuid "
+			."where q.domain_uuid = :u and a.agent_name = :e and ("
+			."select count(*) from v_call_center_tiers t2 "
+			."where t2.call_center_queue_uuid = q.call_center_queue_uuid) = 1",
+			['u' => $domain_uuid, 'e' => $numero], 'all'
+		) ?? [];
+		if (empty($sozinho)) {
+			return;
+		}
+
+		$nomes = implode(', ', array_column($sozinho, 'queue_name'));
+		responde(['erro' => "o ramal $numero é o único que atende " . $nomes
+			. '. Sem ele a fila fica sem ninguém e quem ligar espera na música '
+			. 'até desistir -- ponha outra pessoa antes de apagar'], 409);
 	}
 
 	/** Senha aleatória sem caracteres que atrapalham em configuração de softphone. */

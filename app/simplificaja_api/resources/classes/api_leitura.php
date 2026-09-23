@@ -69,9 +69,11 @@ class api_leitura {
 
 		$registrados = self::registrados(self::nome_do_dominio($domain_uuid));
 		$grupos = self::grupos_por_ramal($domain_uuid);
+		$filas = self::filas_por_ramal($domain_uuid);
 		foreach ($linhas as &$linha) {
 			$linha['registrado'] = in_array($linha['extension'], $registrados, true);
 			$linha['grupos'] = $grupos[$linha['extension']] ?? [];
+			$linha['filas'] = $filas[$linha['extension']] ?? [];
 		}
 		return $linhas;
 	}
@@ -93,6 +95,29 @@ class api_leitura {
 		$mapa = [];
 		foreach ($linhas as $linha) {
 			$mapa[$linha['destination_number']][] = $linha['ring_group_name'];
+		}
+		return $mapa;
+	}
+
+	/**
+	 * De quais filas cada ramal atende.
+	 *
+	 * O atendente da fila é o ramal, e `agent_name` guarda o número -- é assim
+	 * que a fila volta ao ramal sem passar pelo uuid.
+	 */
+	private static function filas_por_ramal(string $domain_uuid): array {
+		$linhas = self::db()->select(
+			"select a.agent_name, q.queue_name "
+			."from v_call_center_tiers t "
+			."join v_call_center_agents a on a.call_center_agent_uuid = t.call_center_agent_uuid "
+			."join v_call_center_queues q on q.call_center_queue_uuid = t.call_center_queue_uuid "
+			."where t.domain_uuid = :u order by q.queue_name",
+			['u' => $domain_uuid], 'all'
+		) ?? [];
+
+		$mapa = [];
+		foreach ($linhas as $linha) {
+			$mapa[$linha['agent_name']][] = $linha['queue_name'];
 		}
 		return $mapa;
 	}

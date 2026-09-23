@@ -43,6 +43,22 @@ class api_fila {
 		'no_answer_delay_time' => 0,
 	];
 
+	/**
+	 * Apaga a configuração do cache do FreeSWITCH.
+	 *
+	 * São TRÊS chaves, não uma: o FusionPBX grava a mesma configuração também
+	 * prefixada e sufixada pelo nome do host (`remove_config_from_cache()` em
+	 * resources/switch.php). Apagar só a nua deixa o módulo lendo a versão
+	 * velha -- e a fila recém-criada responde "Queue not found" a um
+	 * `queue load` que parece certo.
+	 */
+	public static function limpar_config(string $nome): void {
+		$cache = new cache();
+		$cache->delete($nome);
+		$cache->delete(gethostname() . ':' . $nome);
+		$cache->delete($nome . ':' . gethostname());
+	}
+
 	private static function db() {
 		return database::new(['db' => $GLOBALS['db'] ?? null]);
 	}
@@ -329,7 +345,7 @@ class api_fila {
 	private static function publicar(string $dominio, string $ramal, array $atendentes): void {
 		$cache = new cache();
 		$cache->delete('dialplan:' . $dominio);
-		$cache->delete('configuration:callcenter.conf');
+		self::limpar_config('configuration:callcenter.conf');
 
 		$socket = event_socket::create();
 		if (!$socket || !$socket->is_connected()) {
@@ -395,7 +411,7 @@ class api_fila {
 		// em outra.
 		$cache = new cache();
 		$cache->delete('dialplan:' . $dominio);
-		$cache->delete('configuration:callcenter.conf');
+		self::limpar_config('configuration:callcenter.conf');
 		$socket = event_socket::create();
 		if ($socket && $socket->is_connected()) {
 			event_socket::api('reloadxml');
