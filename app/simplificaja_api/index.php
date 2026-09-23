@@ -97,6 +97,13 @@
 			if ($numero === '') { responde(['erro' => 'extension é obrigatório'], 422); }
 			responde(api_ramal::remover($domain_uuid, $numero));
 
+		// Troca a senha de um ramal. POST e nao PATCH porque nao se envia a
+		// senha: ela e gerada aqui.
+		case 'POST ramal-senha':
+			$numero = trim((string) (corpo()['extension'] ?? ''));
+			if ($numero === '') { responde(['erro' => 'extension é obrigatório'], 422); }
+			responde(api_ramal::trocar_senha($domain_uuid, $numero));
+
 		case 'POST troncos':
 			responde(api_tronco::criar($domain_uuid, corpo()), 201);
 

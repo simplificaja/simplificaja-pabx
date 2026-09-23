@@ -87,6 +87,48 @@ class api_ramal {
 		];
 	}
 
+	/**
+	 * Gera uma senha nova para um ramal que já existe.
+	 *
+	 * Não aceita senha escolhida, de propósito: credencial SIP fica exposta na
+	 * internet e a primeira varredura a este PABX chegou 13 minutos depois da
+	 * instalação. Quem escolhe escolhe curto.
+	 *
+	 * Grava pelas classes do FusionPBX e limpa `directory:<ramal>@<domínio>`,
+	 * como a criação faz -- o diretório servido ao FreeSWITCH sai do cache, e
+	 * sem limpar o ramal continua aceitando a senha velha até o cache expirar.
+	 */
+	public static function trocar_senha(string $domain_uuid, string $numero): array {
+		$db = self::db();
+		$linha = $db->select(
+			"select extension_uuid from v_extensions where domain_uuid = :u and extension = :e",
+			['u' => $domain_uuid, 'e' => $numero], 'row'
+		);
+		if (empty($linha)) {
+			responde(['erro' => "ramal $numero não existe neste cliente"], 404);
+		}
+
+		$dominio = $db->select("select domain_name from v_domains where domain_uuid = :u",
+			['u' => $domain_uuid], 'column');
+		$senha = self::senha();
+
+		$p = permissions::new();
+		$p->add('extension_edit', 'temp');
+		// Numa variavel, nao literal: `database::save()` recebe por referencia.
+		$array['extensions'][0] = [
+			'extension_uuid' => $linha['extension_uuid'],
+			'domain_uuid'    => $domain_uuid,
+			'password'       => $senha,
+		];
+		$db->save($array);
+		$p->delete('extension_edit', 'temp');
+
+		$cache = new cache();
+		$cache->delete('directory:' . $numero . '@' . $dominio);
+
+		return ['extension' => $numero, 'senha' => $senha, 'dominio' => $dominio];
+	}
+
 	public static function remover(string $domain_uuid, string $numero): array {
 		$db = self::db();
 
