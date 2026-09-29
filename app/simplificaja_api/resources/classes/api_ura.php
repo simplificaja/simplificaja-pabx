@@ -86,6 +86,17 @@ class api_ura {
 		$ivr_menu_uuid = uuid();
 		$dialplan_uuid = uuid();
 
+		// `saida` vazia, ou a palavra `desligar`, significa encerrar a ligacao no
+		// fim das tentativas. Aceita as duas porque a tela manda vazio quando o
+		// operador nao escolhe destino, e `desligar` quando escolhe encerrar.
+		$saida = trim((string) ($dados['saida'] ?? ''));
+		$desliga_no_fim = ($saida === '' || $saida === 'desligar');
+
+		// Entre 1 e 9: zero deixaria a URA desistir antes de tocar o audio, e
+		// acima disso a pessoa desliga muito antes de a URA cansar.
+		$tentativas = (int) ($dados['tentativas'] ?? 3);
+		$tentativas = max(1, min(9, $tentativas));
+
 		$p = permissions::new();
 		$permissoes = ['ivr_menu_add', 'ivr_menu_option_add', 'dialplan_add', 'dialplan_detail_add'];
 		foreach ($permissoes as $permissao) {
@@ -102,15 +113,21 @@ class api_ura {
 			'ivr_menu_greet_long'    => $saudacao,
 			'ivr_menu_greet_short'   => $repeticao,
 			'ivr_menu_timeout'       => (string) ($dados['espera'] ?? 5000),
-			'ivr_menu_max_failures'  => '3',
-			'ivr_menu_max_timeouts'  => '3',
+			// Quantas vezes a URA repete antes de desistir. `max_failures` conta
+			// tecla invalida e `max_timeouts` conta silencio: quem pediu "tres
+			// tentativas" quer os dois, nao um.
+			'ivr_menu_max_failures'  => (string) $tentativas,
+			'ivr_menu_max_timeouts'  => (string) $tentativas,
 			// Um digito, nao cinco: as opcoes sao de um digito so, e com 5 a URA
 			// fica esperando 2,5s depois que a pessoa aperta -- parece travada.
 			'ivr_menu_digit_len'     => '1',
 			'ivr_menu_direct_dial'   => 'false',
 			'ivr_menu_ringback'      => '${us-ring}',
-			'ivr_menu_exit_app'      => 'transfer',
-			'ivr_menu_exit_data'     => ($dados['saida'] ?? '') . ' XML ' . $dominio,
+			// O que acontece quando a URA desiste. Sem destino, desliga: URA que
+			// volta a tocar o menu para sempre e pior do que encerrar, e "cair na
+			// fila" nem sempre e o que o cliente quer fora do horario.
+			'ivr_menu_exit_app'      => $desliga_no_fim ? 'hangup' : 'transfer',
+			'ivr_menu_exit_data'     => $desliga_no_fim ? '' : ($dados['saida'] ?? '') . ' XML ' . $dominio,
 			'ivr_menu_enabled'       => 'true',
 			'ivr_menu_description'   => $dados['descricao'] ?? '',
 		];

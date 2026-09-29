@@ -264,8 +264,12 @@ class api_leitura {
 	public static function uras(string $domain_uuid): array {
 		$db = self::db();
 		$uras = $db->select(
+			// `exit_app` e `max_failures` entram para a tela poder dizer o que a
+			// URA faz quando ninguem digita: desliga ou manda para um destino, e
+			// depois de quantas tentativas. Sem isso a tela adivinhava.
 			"select i.ivr_menu_uuid, i.ivr_menu_name, i.ivr_menu_extension, "
 			."i.ivr_menu_greet_long, i.ivr_menu_greet_short, i.ivr_menu_exit_data, "
+			."i.ivr_menu_exit_app, i.ivr_menu_max_failures, i.ivr_menu_timeout, "
 			."i.ivr_menu_enabled, coalesce(length(p.dialplan_xml),0) as xml_bytes "
 			."from v_ivr_menus i left join v_dialplans p on p.dialplan_uuid = i.dialplan_uuid "
 			."where i.domain_uuid = :u order by i.ivr_menu_extension",
