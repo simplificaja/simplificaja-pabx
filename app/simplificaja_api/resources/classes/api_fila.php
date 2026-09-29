@@ -12,6 +12,15 @@
  * FreeSWITCH é gerado pelo código deles. Ver docs/armadilhas.md.
  */
 class api_fila {
+	// `ring-all` toca em todos ao mesmo tempo; `sequentially-by-agent-order`
+	// segue a ordem em que os ramais entraram na fila; `longest-idle-agent` manda
+	// para quem ficou mais tempo sem atender.
+	const ESTRATEGIAS = [
+		'todos' => 'ring-all',
+		'ordem' => 'sequentially-by-agent-order',
+		'justa' => 'longest-idle-agent',
+	];
+
 
 	/** App do call center no FusionPBX -- o mesmo que a tela deles grava. */
 	const APP_UUID = '95788e50-9500-079e-2807-fd530b0ea370';
@@ -183,6 +192,16 @@ class api_fila {
 		$dominio = self::nome_do_dominio($domain_uuid);
 		self::exigir_numero_livre($domain_uuid, $ramal);
 
+		// Mesmo vocabulario do grupo (`todos` / `ordem`), mais a distribuicao
+		// justa, que e o pedido comum de quem tem equipe: quem ficou mais tempo
+		// sem atender recebe a proxima. Sem lista branca, um valor errado grava
+		// lixo em `queue_strategy` e a fila para de distribuir sem acusar erro.
+		$chave = (string) ($dados['estrategia'] ?? 'todos');
+		if (!isset(self::ESTRATEGIAS[$chave])) {
+			responde(['erro' => 'estrategia deve ser "todos", "ordem" ou "justa"'], 422);
+		}
+		$estrategia = self::ESTRATEGIAS[$chave];
+
 		$saudacao = empty($dados['saudacao'])
 			? ''
 			: self::caminho_do_audio($dominio, (string) $dados['saudacao']);
@@ -214,7 +233,7 @@ class api_fila {
 			'queue_extension'                   => $ramal,
 			// Toca em todos ao mesmo tempo: é o que o escritório espera, e é o
 			// comportamento do grupo de toque mais a sala de espera.
-			'queue_strategy'                    => (string) ($dados['estrategia'] ?? 'ring-all'),
+			'queue_strategy'                    => $estrategia,
 			'queue_moh_sound'                   => (string) ($dados['musica'] ?? 'local_stream://default'),
 			'queue_max_wait_time'               => (int) ($dados['espera_maxima'] ?? self::ESPERA_MAXIMA),
 			'queue_max_wait_time_with_no_agent' => self::ESPERA_SEM_ATENDENTE,

@@ -182,7 +182,10 @@ class api_leitura {
 		$filas = $db->select(
 			"select q.call_center_queue_uuid, q.queue_name, q.queue_extension, "
 			."q.queue_strategy, q.queue_max_wait_time, q.queue_timeout_action, "
-			."q.queue_description, "
+			// A saudacao da fila e o caminho certo para "ola, aguarde que voce ja
+			// sera atendido": toca uma vez e a pessoa fica na espera. Sem isto a
+			// tela nao tem como dizer se a fila ja fala ou entra muda.
+			."q.queue_greeting, q.queue_description, "
 			."coalesce(length(p.dialplan_xml), 0) as xml_bytes "
 			."from v_call_center_queues q left join v_dialplans p on p.dialplan_uuid = q.dialplan_uuid "
 			."where q.domain_uuid = :u order by q.queue_extension",

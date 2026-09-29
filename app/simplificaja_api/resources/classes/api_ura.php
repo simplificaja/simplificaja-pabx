@@ -97,6 +97,19 @@ class api_ura {
 		$tentativas = (int) ($dados['tentativas'] ?? 3);
 		$tentativas = max(1, min(9, $tentativas));
 
+		// URA sem opcao nenhuma e um anuncio: toca e segue. Repetir nao faz
+		// sentido -- nao ha tecla para a pessoa acertar -- e era o que fazia
+		// "ola, aguarde que voce ja sera atendido" tocar tres vezes antes de cair
+		// na fila. Uma passagem, e uma espera curta so para nao cortar o audio.
+		$tem_opcoes = !empty(array_filter(
+			(array) ($dados['opcoes'] ?? []),
+			fn($o) => !empty($o['digito']) && !empty($o['destino'])
+		));
+		if (!$tem_opcoes) {
+			$tentativas = 1;
+			$dados['espera'] = 1000;
+		}
+
 		$p = permissions::new();
 		$permissoes = ['ivr_menu_add', 'ivr_menu_option_add', 'dialplan_add', 'dialplan_detail_add'];
 		foreach ($permissoes as $permissao) {
