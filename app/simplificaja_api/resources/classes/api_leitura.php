@@ -248,8 +248,17 @@ class api_leitura {
 	 *  destino vivo de destino que aparece na tela e nunca é usado. */
 	public static function destinos(string $domain_uuid): array {
 		return self::db()->select(
+			// `destino` e para onde o numero manda a ligacao. Mora no `transfer` do
+			// detalhe do dialplan como "1001 XML dominio", entao sai o primeiro
+			// pedaco. Sem isto a tela lista o numero e nao sabe dizer onde ele
+			// cai -- e o seletor de destino nao tem como vir marcado.
 			"select d.destination_number, d.destination_enabled, d.destination_description, "
-			."p.dialplan_name, coalesce(length(p.dialplan_xml), 0) as xml_bytes "
+			."p.dialplan_name, coalesce(length(p.dialplan_xml), 0) as xml_bytes, "
+			."(select split_part(dd.dialplan_detail_data, ' ', 1) "
+			." from v_dialplan_details dd "
+			." where dd.dialplan_uuid = d.dialplan_uuid "
+			."   and dd.dialplan_detail_type = 'transfer' "
+			." order by dd.dialplan_detail_order limit 1) as destino "
 			."from v_destinations d "
 			."left join v_dialplans p on p.dialplan_uuid = d.dialplan_uuid "
 			."where d.domain_uuid = :u order by d.destination_number",
