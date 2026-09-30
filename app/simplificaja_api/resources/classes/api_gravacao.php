@@ -44,6 +44,45 @@ class api_gravacao {
 		return $nome;
 	}
 
+	/**
+	 * Formato do audio pelos bytes iniciais, porque o nome do arquivo nao chega
+	 * ate aqui -- o chamador manda so o conteudo em base64.
+	 *
+	 * So os que o sox desta instalacao le. M4A/AAC ficam de fora de proposito:
+	 * o sox nao os suporta, e deixar passar daria um erro pior la na frente.
+	 */
+	private static function formato_do_audio(string $bruto): ?string {
+		if (strlen($bruto) < 12) {
+			return null;
+		}
+		if (substr($bruto, 0, 4) === 'RIFF' && substr($bruto, 8, 4) === 'WAVE') {
+			return 'wav';
+		}
+		if (substr($bruto, 0, 4) === 'OggS') {
+			return 'ogg';
+		}
+		if (substr($bruto, 0, 4) === 'fLaC') {
+			return 'flac';
+		}
+		if (substr($bruto, 0, 4) === '.snd') {
+			return 'au';
+		}
+		if (substr($bruto, 0, 4) === 'FORM' && substr($bruto, 8, 4) === 'AIFF') {
+			return 'aiff';
+		}
+		// MP3 vem com tag ID3 na frente, ou direto no quadro, que comeca com
+		// onze bits em 1.
+		if (substr($bruto, 0, 3) === 'ID3') {
+			return 'mp3';
+		}
+		$b0 = ord($bruto[0]);
+		$b1 = ord($bruto[1]);
+		if ($b0 === 0xFF && ($b1 & 0xE0) === 0xE0) {
+			return 'mp3';
+		}
+		return null;
+	}
+
 	public static function criar(string $domain_uuid, array $dados): array {
 		// Só o que vira nome de arquivo: o valor entra num caminho e num
 		// comando, então nada de barra, espaço ou ponto-ponto.
@@ -71,14 +110,22 @@ class api_gravacao {
 			responde(['erro' => 'audio não é base64 válido'], 422);
 		}
 
-		// O sox precisa de arquivo, e o formato de entrada pode ser qualquer
-		// um que ele leia -- WAV, MP3, o que o cliente tiver.
+		// O sox descobre o formato pela extensao do arquivo, e `tempnam` cria um
+		// arquivo sem extensao nenhuma -- entao ele falhava com "can't determine
+		// type of file" em todo MP3. O formato sai dos bytes e vai explicito
+		// no `-t`, que e o que funciona independente do nome.
+		$formato = self::formato_do_audio($bruto);
+		if ($formato === null) {
+			responde(['erro' => 'formato de audio nao reconhecido; envie WAV, MP3, OGG ou FLAC'], 422);
+		}
+
 		$origem = tempnam(sys_get_temp_dir(), 'audio');
 		file_put_contents($origem, $bruto);
 
 		// 8 kHz mono 16 bits: o que o FreeSWITCH toca sem reamostrar.
-		exec(sprintf('sox %s -r 8000 -c 1 -b 16 %s 2>&1',
-			escapeshellarg($origem), escapeshellarg($destino)), $saida, $codigo);
+		exec(sprintf('sox -t %s %s -r 8000 -c 1 -b 16 %s 2>&1',
+			escapeshellarg($formato), escapeshellarg($origem),
+			escapeshellarg($destino)), $saida, $codigo);
 		unlink($origem);
 
 		if ($codigo !== 0 || !file_exists($destino)) {
