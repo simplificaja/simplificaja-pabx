@@ -151,6 +151,22 @@ class api_saude {
 		$r[] = self::item('arquivos das gravações no lugar', empty($faltando),
 			implode(', ', $faltando) . ' sem arquivo no disco: a URA fica muda');
 
+		// 9. Fila sem anúncio periódico. Esta não é "algo deixa de funcionar":
+		//    o processo do FreeSWITCH morre. O mod_callcenter deste build chama
+		//    `switch_ivr_stop_displace_session(sessao, queue->announce)` quando
+		//    quem ligou sai da fila, sem checar nulo, e a função usa o ponteiro
+		//    como chave de hashtable -- SIGSEGV. Como o systemd levanta em dois
+		//    segundos, o sintoma que chega é "a ligação não tem voz", e ninguém
+		//    olha para a fila. A ficha cria com o campo preenchido; quem cria
+		//    pela tela nativa do FusionPBX, não. Ver api_fila::ANUNCIO_INOFENSIVO.
+		$n = (int) $db->select(
+			"select count(*) as n from v_call_center_queues "
+			."where domain_uuid = :u and coalesce(queue_announce_sound, '') = ''",
+			['u' => $domain_uuid], 'column'
+		);
+		$r[] = self::item('filas não derrubam o PABX', $n === 0,
+			"$n fila(s) sem anúncio: o PABX cai no primeiro atendimento e a ligação fica sem voz");
+
 		return [
 			'tudo_certo' => !in_array(false, array_column($r, 'ok'), true),
 			'checagens'  => $r,

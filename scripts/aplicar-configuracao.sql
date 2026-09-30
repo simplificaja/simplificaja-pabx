@@ -38,7 +38,58 @@ where ac.access_control_name = 'providers'
     select 1 from v_access_control_nodes n where n.node_cidr = f.cidr
   );
 
-\echo '== 3. Conferencia =='
+\echo '== 3. Fila sem anuncio nao derruba mais o FreeSWITCH =='
+-- O mod_callcenter deste build chama, quando quem ligou sai da fila (atendido
+-- OU desistindo), `switch_ivr_stop_displace_session(sessao, queue->announce)`
+-- sem checar nulo -- e essa funcao usa o ponteiro direto como chave de
+-- hashtable. Ponteiro nulo ali e SIGSEGV no processo inteiro do FreeSWITCH.
+--
+-- Backtrace do core:
+--   switch_hash_default(ky=0x0)               switch_hashtable.h:230
+--   switch_channel_get_private(key=0x0)       switch_channel.c:1105
+--   switch_ivr_stop_displace_session(file=0)  switch_ivr_async.c:993
+--   callcenter_function                       mod_callcenter.c:3307
+--
+-- O systemd tem Restart=always e levanta em dois segundos, entao nada parece
+-- caido: o sintoma que aparece e "a ligacao nao tem voz", porque os dois
+-- telefones seguem mandando RTP para um processo que nao existe mais.
+--
+-- A release 1.10.12 protege a chamada (`queue->announce && ...`); este servidor
+-- roda um snapshot de git posterior (ba840f2, 2026-05-04) onde a checagem nao
+-- existe no caminho de saida da fila. Enquanto o build for esse, nenhuma fila
+-- pode ter o campo vazio.
+--
+-- O api_fila.php ja grava o valor, mas a tela nativa do FusionPBX nao -- e o
+-- campo la e opcional. Este gatilho cobre TODO caminho de escrita, inclusive o
+-- deles e SQL na mao. Nao da para usar DEFAULT de coluna: o formulario do
+-- FusionPBX envia o campo como string vazia, e default so dispara quando a
+-- coluna e omitida.
+--
+-- Silencio com frequencia zero nunca toca: o anuncio periodico nao e recurso
+-- que oferecemos, o campo existe so para nao ser nulo.
+
+create or replace function simplificaja_fila_exige_anuncio()
+returns trigger as $$
+begin
+  if coalesce(new.queue_announce_sound, '') = '' then
+    new.queue_announce_sound := 'silence_stream://1000';
+    new.queue_announce_frequency := coalesce(new.queue_announce_frequency, 0);
+  end if;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists simplificaja_fila_exige_anuncio on v_call_center_queues;
+create trigger simplificaja_fila_exige_anuncio
+  before insert or update on v_call_center_queues
+  for each row execute function simplificaja_fila_exige_anuncio();
+
+-- Conserta as filas que ja existem. O update dispara o gatilho acima.
+update v_call_center_queues
+set queue_announce_sound = queue_announce_sound
+where coalesce(queue_announce_sound, '') = '';
+
+\echo '== 4. Conferencia =='
 select p.sip_profile_name, s.sip_profile_setting_name, s.sip_profile_setting_value
 from v_sip_profiles p
 join v_sip_profile_settings s on s.sip_profile_uuid = p.sip_profile_uuid
@@ -50,3 +101,9 @@ select ac.access_control_name, n.node_type, n.node_cidr, n.node_description
 from v_access_control_nodes n
 join v_access_controls ac on ac.access_control_uuid = n.access_control_uuid
 where ac.access_control_name = 'providers';
+
+select queue_extension, queue_name,
+       coalesce(queue_announce_sound, '(NULO -- o PABX vai cair)') as anuncio,
+       coalesce(queue_announce_frequency::text, '(nulo)') as frequencia
+from v_call_center_queues
+order by queue_extension;
