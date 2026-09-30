@@ -16,6 +16,7 @@
 	require __DIR__ . "/resources/classes/api_destino.php";
 	require __DIR__ . "/resources/classes/api_dominio.php";
 	require __DIR__ . "/resources/classes/api_ura.php";
+	require __DIR__ . "/resources/classes/api_anuncio.php";
 	require __DIR__ . "/resources/classes/api_gravacao.php";
 	require __DIR__ . "/resources/classes/api_grupo.php";
 	require __DIR__ . "/resources/classes/api_fila.php";
@@ -124,6 +125,19 @@
 
 		case 'DELETE dominio':
 			responde(api_dominio::remover(corpo()));
+
+		// Anuncio toca um audio e segue. E plano de discagem direto, nao URA:
+		// URA escuta DTMF, e isso fazia o audio poder ser pulado por engano.
+		case 'GET anuncios':
+			responde(api_anuncio::listar($domain_uuid));
+
+		case 'POST anuncios':
+			responde(api_anuncio::criar($domain_uuid, corpo()));
+
+		case 'DELETE anuncios':
+			$n = trim((string) (corpo()['numero'] ?? ''));
+			if ($n === '') { responde(['erro' => 'numero é obrigatório'], 422); }
+			responde(api_anuncio::remover($domain_uuid, $n));
 
 		case 'GET uras':
 			responde(api_leitura::uras($domain_uuid));
