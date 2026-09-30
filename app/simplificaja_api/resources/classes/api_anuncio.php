@@ -22,8 +22,9 @@ class api_anuncio {
 	const FAIXA_FIM = 8999;
 
 	/** Depois do `answer` o outro lado ainda está abrindo o canal de voz, e o
-	 *  começo do áudio some. Mesmo motivo da saudação da fila. */
-	const ESPERA_ANTES_DO_AUDIO = 1000;
+	 *  começo do áudio some. Mesmo motivo da saudação da fila.
+	 *  Medido em ligação real: com 1000 o primeiro segundo ainda vinha cortado. */
+	const ESPERA_ANTES_DO_AUDIO = 2000;
 
 	private static function db() {
 		return database::new(['db' => $GLOBALS['db'] ?? null]);

@@ -202,6 +202,15 @@ class api_fila {
 		}
 		$estrategia = self::ESTRATEGIAS[$chave];
 
+		// `local_stream://default` nao resolve para nada nesta instalacao -- nao ha
+		// diretorio de musica e o mod_local_stream nem esta carregado, entao a
+		// espera virava silencio. A musica passa a sair das gravacoes do proprio
+		// cliente, que e o certo num produto multi-tenant: stream compartilhado
+		// tocaria o audio de um cliente na espera de outro.
+		$musica = empty($dados['musica'])
+			? 'silence_stream://-1'
+			: self::caminho_do_audio($dominio, (string) $dados['musica']);
+
 		$saudacao = empty($dados['saudacao'])
 			? ''
 			: self::caminho_do_audio($dominio, (string) $dados['saudacao']);
@@ -234,7 +243,7 @@ class api_fila {
 			// Toca em todos ao mesmo tempo: é o que o escritório espera, e é o
 			// comportamento do grupo de toque mais a sala de espera.
 			'queue_strategy'                    => $estrategia,
-			'queue_moh_sound'                   => (string) ($dados['musica'] ?? 'local_stream://default'),
+			'queue_moh_sound'                   => $musica,
 			'queue_max_wait_time'               => (int) ($dados['espera_maxima'] ?? self::ESPERA_MAXIMA),
 			'queue_max_wait_time_with_no_agent' => self::ESPERA_SEM_ATENDENTE,
 			'queue_tier_rules_apply'            => 'false',
@@ -324,6 +333,12 @@ class api_fila {
 		$xml .= '		<action application="set" data="call_center_queue_uuid=' . xml::sanitize($fila_uuid) . '"/>' . "\n";
 		$xml .= '		<action application="set" data="queue_extension=' . xml::sanitize($ramal) . '"/>' . "\n";
 		$xml .= '		<action application="set" data="hangup_after_bridge=true"/>' . "\n";
+		// `hold_music` e variavel GLOBAL no FusionPBX, apontando para
+		// `local_stream://default`. Num produto multi-tenant isso e duplamente
+		// errado: nesta instalacao o stream nem existe (a espera virava silencio)
+		// e, se existisse, tocaria a mesma musica para todos os clientes. Cada
+		// fila passa a fixar a sua na propria chamada.
+		$xml .= '		<action application="set" data="hold_music=' . xml::sanitize($musica) . '"/>' . "\n";
 		$xml .= '		<action application="set" data="record_stereo=true"/>' . "\n";
 		if ($saudacao !== '') {
 			// O `sleep` é dos dois lados: sem ele o começo do áudio some,
