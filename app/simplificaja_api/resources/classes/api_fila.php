@@ -402,6 +402,45 @@ class api_fila {
 		}
 	}
 
+	/**
+	 * Edita apagando e recriando, e nao no lugar.
+	 *
+	 * A fila nao vive so no banco: o mod_callcenter guarda fila, atendente e
+	 * vinculo num armazenamento proprio que sobrevive a recarga do modulo.
+	 * Atualizar as linhas deixaria o que esta em memoria valendo, e a ligacao
+	 * seguiria a configuracao antiga sem a tela acusar nada. `remover` ja sabe
+	 * descarregar isso; `criar` ja sabe montar tudo de novo.
+	 *
+	 * A ordem importa: tudo o que pode ser recusado e conferido ANTES de
+	 * apagar, senao um nome invalido deixaria o cliente sem a fila que tinha.
+	 */
+	public static function editar(string $domain_uuid, array $dados): array {
+		$ramal = trim((string) ($dados['ramal'] ?? ''));
+		if ($ramal === '') {
+			responde(['erro' => 'ramal é obrigatório'], 422);
+		}
+		if (empty($dados['nome'])) {
+			responde(['erro' => 'nome é obrigatório'], 422);
+		}
+		$chave = (string) ($dados['estrategia'] ?? 'todos');
+		if (!isset(self::ESTRATEGIAS[$chave])) {
+			responde(['erro' => 'estrategia deve ser "todos", "ordem" ou "justa"'], 422);
+		}
+
+		$db = self::db();
+		$existe = $db->select(
+			"select call_center_queue_uuid from v_call_center_queues "
+			."where domain_uuid = :u and queue_extension = :e",
+			['u' => $domain_uuid, 'e' => $ramal], 'column'
+		);
+		if (empty($existe)) {
+			responde(['erro' => "não existe fila no número $ramal"], 404);
+		}
+
+		self::remover($domain_uuid, $ramal);
+		return self::criar($domain_uuid, $dados);
+	}
+
 	public static function remover(string $domain_uuid, string $ramal): array {
 		$db = self::db();
 		$linha = $db->select(

@@ -73,14 +73,24 @@ class api_anuncio {
 		return $linhas;
 	}
 
+	/**
+	 * O primeiro `playback` do anuncio e o `silence_stream` que prepara o canal
+	 * de voz -- pegar o primeiro fazia a listagem devolver "1500" como se fosse
+	 * o nome do audio. Fica com a ultima ocorrencia que nao e um stream.
+	 */
 	private static function extrair(?string $xml, string $aplicacao): ?string {
 		if ($xml === null) {
 			return null;
 		}
-		if (preg_match('/application="' . $aplicacao . '" data="([^"]*)"/', $xml, $m) !== 1) {
+		if (preg_match_all('/application="' . $aplicacao . '" data="([^"]*)"/', $xml, $m) < 1) {
 			return null;
 		}
-		return $m[1] === '' ? null : $m[1];
+		foreach ($m[1] as $valor) {
+			if ($valor !== '' && !str_contains($valor, '_stream://')) {
+				return $valor;
+			}
+		}
+		return null;
 	}
 
 	public static function criar(string $domain_uuid, array $dados): array {
@@ -123,6 +133,60 @@ class api_anuncio {
 		$db->save($array);
 		self::exigir_gravado($db, "o anúncio $numero");
 		foreach (['dialplan_add', 'dialplan_detail_add'] as $permissao) {
+			$p->delete($permissao, 'temp');
+		}
+
+		self::recarregar($dominio);
+
+		return ['anuncio' => $dados['nome'], 'numero' => $numero, 'audio' => basename($audio)];
+	}
+
+	/**
+	 * Edita sem recriar. Da para atualizar no lugar porque o plano de discagem
+	 * do anuncio e gerado inteiro a cada vez -- nao ha estado em memoria como o
+	 * do mod_callcenter, nem vinculo em outra tabela.
+	 *
+	 * O numero nao muda: ele e endereco, e quem aponta para o anuncio guarda
+	 * esse endereco. Trocar quebraria quem aponta sem avisar.
+	 */
+	public static function editar(string $domain_uuid, array $dados): array {
+		$numero = trim((string) ($dados['numero'] ?? ''));
+		if ($numero === '') {
+			responde(['erro' => 'numero é obrigatório'], 422);
+		}
+		foreach (['nome', 'audio'] as $campo) {
+			if (empty($dados[$campo])) {
+				responde(['erro' => "$campo é obrigatório"], 422);
+			}
+		}
+
+		$db = self::db();
+		$uuid = $db->select(
+			"select dialplan_uuid from v_dialplans "
+			."where domain_uuid = :u and app_uuid = :a and dialplan_number = :n",
+			['u' => $domain_uuid, 'a' => self::APP_UUID, 'n' => $numero], 'column'
+		);
+		if (empty($uuid)) {
+			responde(['erro' => "não existe anúncio no número $numero"], 404);
+		}
+
+		$dominio = self::nome_do_dominio($domain_uuid);
+		$audio = self::caminho_do_audio($dominio, (string) $dados['audio']);
+		if (!file_exists($audio)) {
+			responde(['erro' => 'áudio não existe neste domínio'], 404);
+		}
+
+		$p = permissions::new();
+		foreach (['dialplan_add', 'dialplan_edit', 'dialplan_detail_add'] as $permissao) {
+			$p->add($permissao, 'temp');
+		}
+		$array['dialplans'][0] = self::dialplan($domain_uuid, $uuid, $dominio, $numero,
+			(string) $dados['nome'], $audio,
+			trim((string) ($dados['destino'] ?? '')),
+			(string) ($dados['descricao'] ?? ''));
+		$db->save($array);
+		self::exigir_gravado($db, "o anúncio $numero");
+		foreach (['dialplan_add', 'dialplan_edit', 'dialplan_detail_add'] as $permissao) {
 			$p->delete($permissao, 'temp');
 		}
 

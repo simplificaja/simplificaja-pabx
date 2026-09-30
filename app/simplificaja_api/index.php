@@ -134,6 +134,9 @@
 		case 'POST anuncios':
 			responde(api_anuncio::criar($domain_uuid, corpo()));
 
+		case 'POST anuncio-editar':
+			responde(api_anuncio::editar($domain_uuid, corpo()));
+
 		case 'DELETE anuncios':
 			$n = trim((string) (corpo()['numero'] ?? ''));
 			if ($n === '') { responde(['erro' => 'numero é obrigatório'], 422); }
@@ -175,6 +178,12 @@
 
 		case 'POST filas':
 			responde(api_fila::criar($domain_uuid, corpo()), 201);
+
+		// Editar fila e apagar e recriar: o mod_callcenter guarda estado em
+		// memoria, e atualizar so o banco deixaria a ligacao seguindo a
+		// configuracao antiga sem a tela acusar nada.
+		case 'POST fila-editar':
+			responde(api_fila::editar($domain_uuid, corpo()));
 
 		case 'DELETE filas':
 			$ramal = trim((string) (corpo()['ramal'] ?? ''));
