@@ -36,6 +36,33 @@ class api_fila {
 	const ESPERA_MAXIMA = 300;
 
 	/**
+	 * Anúncio periódico: existe só para NÃO ser nulo.
+	 *
+	 * O mod_callcenter deste servidor chama, quando quem ligou sai da fila
+	 * (atendido OU desistindo), `switch_ivr_stop_displace_session(sessao,
+	 * queue->announce)` sem checar se `announce` é nulo -- e essa função usa o
+	 * ponteiro direto como chave de hashtable. Ponteiro nulo ali é SIGSEGV no
+	 * processo inteiro: o FreeSWITCH morre no instante em que o atendente
+	 * atende, o `systemd` levanta de novo em dois segundos, e o que se vê é
+	 * "a ligação não tem voz". Backtrace: `switch_hash_default(ky=0x0)` <-
+	 * `switch_channel_get_private(key=0x0)` <- `switch_ivr_stop_displace_session
+	 * (file=0x0)` <- `callcenter_function` em mod_callcenter.c:3307.
+	 *
+	 * A release 1.10.12 protege a chamada (`queue->announce && ...`); este
+	 * servidor roda um snapshot de git posterior, onde a checagem não existe no
+	 * caminho de saída da fila. Enquanto o build for esse, toda fila precisa
+	 * nascer com o campo preenchido.
+	 *
+	 * Silêncio, e não um áudio do cliente, porque o anúncio periódico não é um
+	 * recurso que oferecemos: com frequência zero ele nunca toca, e um caminho
+	 * de arquivo aqui só criaria dependência de gravação que ninguém pediu.
+	 */
+	const ANUNCIO_INOFENSIVO = 'silence_stream://1000';
+
+	/** Zero = o anúncio periódico nunca toca. Ver ANUNCIO_INOFENSIVO. */
+	const ANUNCIO_FREQUENCIA = 0;
+
+	/**
 	 * Atendente nunca sai de campo sozinho.
 	 *
 	 * O mod_callcenter tira de cena quem não atendeu N vezes, some com quem
@@ -250,6 +277,10 @@ class api_fila {
 			'queue_tier_rule_no_agent_no_wait'  => 'false',
 			'queue_timeout_action'              => self::estouro($dados, $dominio),
 			'queue_cid_prefix'                  => $nome,
+			// Não é recurso: é o que impede o FreeSWITCH de morrer quando a
+			// ligação sai da fila. Ver ANUNCIO_INOFENSIVO.
+			'queue_announce_sound'              => self::ANUNCIO_INOFENSIVO,
+			'queue_announce_frequency'          => self::ANUNCIO_FREQUENCIA,
 			'queue_context'                     => $dominio,
 			'queue_greeting'                    => $saudacao,
 			'queue_description'                 => (string) ($dados['descricao'] ?? ''),
