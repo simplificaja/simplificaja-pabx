@@ -38,20 +38,22 @@ class api_fila {
 	/**
 	 * Anúncio periódico: existe só para NÃO ser nulo.
 	 *
-	 * O mod_callcenter deste servidor chama, quando quem ligou sai da fila
-	 * (atendido OU desistindo), `switch_ivr_stop_displace_session(sessao,
-	 * queue->announce)` sem checar se `announce` é nulo -- e essa função usa o
-	 * ponteiro direto como chave de hashtable. Ponteiro nulo ali é SIGSEGV no
+	 * O mod_callcenter deste servidor chama, no instante em que o atendente
+	 * atende, `switch_ivr_stop_displace_session(sessao, queue->announce)` sem
+	 * checar se `announce` é nulo -- e essa função usa o ponteiro direto como
+	 * chave de hashtable. Ponteiro nulo ali é SIGSEGV no
 	 * processo inteiro: o FreeSWITCH morre no instante em que o atendente
 	 * atende, o `systemd` levanta de novo em dois segundos, e o que se vê é
 	 * "a ligação não tem voz". Backtrace: `switch_hash_default(ky=0x0)` <-
 	 * `switch_channel_get_private(key=0x0)` <- `switch_ivr_stop_displace_session
 	 * (file=0x0)` <- `callcenter_function` em mod_callcenter.c:3307.
 	 *
-	 * A release 1.10.12 protege a chamada (`queue->announce && ...`); este
-	 * servidor roda um snapshot de git posterior, onde a checagem não existe no
-	 * caminho de saída da fila. Enquanto o build for esse, toda fila precisa
-	 * nascer com o campo preenchido.
+	 * A chamada NÃO existe no FreeSWITCH oficial, nem na release nem no master:
+	 * é do fork do FusionPBX, commit `d871c84ab8` ("Stop announcement on agent
+	 * call answer", 08/04/2026, github.com/fusionpbx/freeswitch). Três linhas,
+	 * nenhuma checagem. O ramo de abandono não tem a chamada, então desistir de
+	 * esperar é seguro -- só o atendimento derruba. Enquanto o build vier desse
+	 * fork, toda fila precisa nascer com o campo preenchido.
 	 *
 	 * Silêncio, e não um áudio do cliente, porque o anúncio periódico não é um
 	 * recurso que oferecemos: com frequência zero ele nunca toca, e um caminho

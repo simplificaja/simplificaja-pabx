@@ -39,10 +39,11 @@ where ac.access_control_name = 'providers'
   );
 
 \echo '== 3. Fila sem anuncio nao derruba mais o FreeSWITCH =='
--- O mod_callcenter deste build chama, quando quem ligou sai da fila (atendido
--- OU desistindo), `switch_ivr_stop_displace_session(sessao, queue->announce)`
--- sem checar nulo -- e essa funcao usa o ponteiro direto como chave de
--- hashtable. Ponteiro nulo ali e SIGSEGV no processo inteiro do FreeSWITCH.
+-- O mod_callcenter deste build chama, no instante em que o atendente atende,
+-- `switch_ivr_stop_displace_session(sessao, queue->announce)` sem checar nulo
+-- -- e essa funcao usa o ponteiro direto como chave de hashtable. Ponteiro
+-- nulo ali e SIGSEGV no processo inteiro do FreeSWITCH. (O ramo de abandono
+-- nao tem a chamada: desistir de esperar e seguro.)
 --
 -- Backtrace do core:
 --   switch_hash_default(ky=0x0)               switch_hashtable.h:230
@@ -54,10 +55,11 @@ where ac.access_control_name = 'providers'
 -- caido: o sintoma que aparece e "a ligacao nao tem voz", porque os dois
 -- telefones seguem mandando RTP para um processo que nao existe mais.
 --
--- A release 1.10.12 protege a chamada (`queue->announce && ...`); este servidor
--- roda um snapshot de git posterior (ba840f2, 2026-05-04) onde a checagem nao
--- existe no caminho de saida da fila. Enquanto o build for esse, nenhuma fila
--- pode ter o campo vazio.
+-- A chamada NAO existe no FreeSWITCH oficial, nem na release nem no master. Ela
+-- vem do fork do FusionPBX: commit d871c84ab8, "Stop announcement on agent call
+-- answer" (08/04/2026), em github.com/fusionpbx/freeswitch. Tres linhas, nenhuma
+-- checagem de nulo. Enquanto o build vier desse fork, nenhuma fila pode ter o
+-- campo vazio.
 --
 -- O api_fila.php ja grava o valor, mas a tela nativa do FusionPBX nao -- e o
 -- campo la e opcional. Este gatilho cobre TODO caminho de escrita, inclusive o
