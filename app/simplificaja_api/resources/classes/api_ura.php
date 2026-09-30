@@ -47,13 +47,48 @@ class api_ura {
 		return $caminho;
 	}
 
+	/**
+	 * Primeiro numero livre da faixa 8000-8999, conferindo as quatro coisas que
+	 * dividem o plano de numeracao do cliente: URA, ramal, fila e grupo.
+	 */
+	private static function proximo_livre(string $domain_uuid): ?string {
+		$db = self::db();
+		$usados = [];
+		$consultas = [
+			"select ivr_menu_extension as n from v_ivr_menus where domain_uuid = :u",
+			"select extension as n from v_extensions where domain_uuid = :u",
+			"select queue_extension as n from v_call_center_queues where domain_uuid = :u",
+			"select ring_group_extension as n from v_ring_groups where domain_uuid = :u",
+		];
+		foreach ($consultas as $sql) {
+			foreach ((array) ($db->select($sql, ['u' => $domain_uuid], 'all') ?? []) as $linha) {
+				$usados[(string) $linha['n']] = true;
+			}
+		}
+		for ($n = 8000; $n <= 8999; $n++) {
+			if (!isset($usados[(string) $n])) {
+				return (string) $n;
+			}
+		}
+		return null;
+	}
+
 	public static function criar(string $domain_uuid, array $dados): array {
-		foreach (['nome', 'ramal', 'saudacao'] as $campo) {
+		foreach (['nome', 'saudacao'] as $campo) {
 			if (empty($dados[$campo])) {
 				responde(['erro' => "$campo é obrigatório"], 422);
 			}
 		}
-		$ramal = trim((string) $dados['ramal']);
+		// Sem `ramal`, o PABX escolhe: o numero e endereco de plano de discagem,
+		// nao decisao de quem monta o atendimento. A faixa 8000 e so para isto --
+		// ramal e 1xxx, grupo 2xxx, fila e menu 9xxx.
+		$ramal = trim((string) ($dados['ramal'] ?? ''));
+		if ($ramal === '') {
+			$ramal = self::proximo_livre($domain_uuid);
+			if ($ramal === null) {
+				responde(['erro' => 'nao ha numero interno livre na faixa 8000-8999'], 409);
+			}
+		}
 		if (!ctype_digit($ramal)) {
 			responde(['erro' => 'ramal da URA deve ser numérico'], 422);
 		}
@@ -68,6 +103,24 @@ class api_ura {
 		if (!empty($existe)) {
 			responde(['erro' => "já existe URA no ramal $ramal"], 409);
 		}
+		$fila = $db->select(
+			"select call_center_queue_uuid from v_call_center_queues "
+			."where domain_uuid = :u and queue_extension = :e",
+			['u' => $domain_uuid, 'e' => $ramal], 'column'
+		);
+		if (!empty($fila)) {
+			responde(['erro' => "o numero $ramal ja e de uma fila"], 409);
+		}
+
+		$grupo = $db->select(
+			"select ring_group_uuid from v_ring_groups "
+			."where domain_uuid = :u and ring_group_extension = :e",
+			['u' => $domain_uuid, 'e' => $ramal], 'column'
+		);
+		if (!empty($grupo)) {
+			responde(['erro' => "o numero $ramal ja e de um grupo"], 409);
+		}
+
 		$ocupado = $db->select(
 			"select extension_uuid from v_extensions where domain_uuid = :u and extension = :e",
 			['u' => $domain_uuid, 'e' => $ramal], 'column'
