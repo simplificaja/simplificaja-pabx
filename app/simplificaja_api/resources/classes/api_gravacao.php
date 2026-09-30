@@ -122,8 +122,17 @@ class api_gravacao {
 		$origem = tempnam(sys_get_temp_dir(), 'audio');
 		file_put_contents($origem, $bruto);
 
-		// 8 kHz mono 16 bits: o que o FreeSWITCH toca sem reamostrar.
-		exec(sprintf('sox -t %s %s -r 8000 -c 1 -b 16 %s 2>&1',
+		// 8 kHz mono 16 bits: o que o FreeSWITCH toca sem reamostrar. Os tres
+		// efeitos importam, e musica de espera foi onde a falta deles apareceu:
+		//
+		//   gain -n -3  nivela. Audio gravado baixo atravessa o codec do
+		//               telefone com pouco sinal e muito chiado.
+		//   rate -v     reamostra com filtro anti-aliasing de verdade. O
+		//               reamostrador padrao do `-r` deixa alias audivel, que e
+		//               o que soa metalico -- "robotizado".
+		//   dither -s   ruido moldado ao cortar para 16 bits, em vez de
+		//               truncar seco.
+		exec(sprintf('sox -t %s %s -c 1 -b 16 %s gain -n -3 rate -v 8000 dither -s 2>&1',
 			escapeshellarg($formato), escapeshellarg($origem),
 			escapeshellarg($destino)), $saida, $codigo);
 		unlink($origem);
