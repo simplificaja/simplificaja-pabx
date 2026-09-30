@@ -21,10 +21,15 @@ class api_anuncio {
 	const FAIXA_INICIO = 8000;
 	const FAIXA_FIM = 8999;
 
-	/** Depois do `answer` o outro lado ainda está abrindo o canal de voz, e o
-	 *  começo do áudio some. Mesmo motivo da saudação da fila.
-	 *  Medido em ligação real: com 1000 o primeiro segundo ainda vinha cortado. */
-	const ESPERA_ANTES_DO_AUDIO = 2000;
+	/** Silêncio tocado antes do áudio, para o outro lado terminar de abrir o
+	 *  canal de voz.
+	 *
+	 *  `sleep` não serve: ele espera sem mandar pacote nenhum, e o buffer de
+	 *  jitter da operadora só sincroniza quando começa a receber áudio -- então
+	 *  os primeiros pacotes reais é que viravam o pedaço perdido. Com 1000 e
+	 *  depois 2000 de `sleep` o começo continuou cortado em ligação real.
+	 *  `silence_stream` manda silêncio de verdade e o buffer chega pronto. */
+	const ESPERA_ANTES_DO_AUDIO = 1500;
 
 	private static function db() {
 		return database::new(['db' => $GLOBALS['db'] ?? null]);
@@ -170,7 +175,7 @@ class api_anuncio {
 		// `none` é o "Allow Skip = não" do Issabel: sem isto uma tecla durante o
 		// áudio corta o anúncio, que é o defeito que a URA sem opções tinha.
 		$xml .= '		<action application="set" data="playback_terminators=none"/>' . "\n";
-		$xml .= '		<action application="sleep" data="' . self::ESPERA_ANTES_DO_AUDIO . '"/>' . "\n";
+		$xml .= '		<action application="playback" data="silence_stream://' . self::ESPERA_ANTES_DO_AUDIO . '"/>' . "\n";
 		$xml .= '		<action application="playback" data="' . xml::sanitize($audio) . '"/>' . "\n";
 		if ($destino !== '' && $destino !== 'desligar') {
 			$xml .= '		<action application="transfer" data="' . xml::sanitize($destino) . ' XML ' . $dominio . '"/>' . "\n";

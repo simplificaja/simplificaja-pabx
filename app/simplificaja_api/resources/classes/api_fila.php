@@ -341,9 +341,11 @@ class api_fila {
 		$xml .= '		<action application="set" data="hold_music=' . xml::sanitize($musica) . '"/>' . "\n";
 		$xml .= '		<action application="set" data="record_stereo=true"/>' . "\n";
 		if ($saudacao !== '') {
-			// O `sleep` é dos dois lados: sem ele o começo do áudio some,
-			// porque o outro lado ainda está abrindo o canal de voz.
-			$xml .= '		<action application="sleep" data="1000"/>' . "\n";
+			// Silêncio de verdade, não `sleep`: o `sleep` espera sem mandar
+			// pacote, e o buffer de jitter da operadora só sincroniza quando
+			// começa a receber áudio -- então o começo da saudação é que se
+			// perdia. Mesmo defeito que apareceu no anúncio.
+			$xml .= '		<action application="playback" data="silence_stream://1500"/>' . "\n";
 			$xml .= '		<action application="playback" data="' . xml::sanitize($saudacao) . '"/>' . "\n";
 		}
 		$xml .= '		<action application="callcenter" data="' . xml::sanitize($ramal) . '@' . $dominio . '"/>' . "\n";
