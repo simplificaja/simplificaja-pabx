@@ -17,6 +17,7 @@
 	require __DIR__ . "/resources/classes/api_dominio.php";
 	require __DIR__ . "/resources/classes/api_ura.php";
 	require __DIR__ . "/resources/classes/api_anuncio.php";
+	require __DIR__ . "/resources/classes/api_horario.php";
 	require __DIR__ . "/resources/classes/api_gravacao.php";
 	require __DIR__ . "/resources/classes/api_grupo.php";
 	require __DIR__ . "/resources/classes/api_fila.php";
@@ -218,6 +219,17 @@
 			$numero = trim((string) (corpo()['numero'] ?? ''));
 			if ($numero === '') { responde(['erro' => 'numero é obrigatório'], 422); }
 			responde(api_destino::remover($domain_uuid, $numero));
+
+		case 'GET horarios':
+			responde(api_horario::listar($domain_uuid));
+
+		case 'POST horarios':
+			responde(api_horario::criar($domain_uuid, corpo()), 201);
+
+		case 'DELETE horarios':
+			$numero = trim((string) (corpo()['numero'] ?? ''));
+			if ($numero === '') { responde(['erro' => 'numero é obrigatório'], 422); }
+			responde(api_horario::remover($domain_uuid, $numero));
 
 		default:
 			responde(['erro' => "rota desconhecida: $metodo $rota"], 404);
