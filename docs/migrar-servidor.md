@@ -101,6 +101,12 @@ chown -R www-data:www-data /var/lib/freeswitch/recordings
 Sem isso: anúncio e música de espera viram silêncio, e a ligação "funciona" sem
 áudio — defeito que não acusa erro em lugar nenhum.
 
+**Quando o Cloudflare R2 entrar, este passo vira ressincronização em vez de
+`rsync`** — e deixa de depender de alguém lembrar dele. Mas o arquivo **local
+continua sendo o que o FreeSWITCH toca**: `mod_http_cache` não está compilado
+neste build, e buscar pela rede no começo da saudação reintroduz o corte de áudio
+que custou a madrugada de 30/09. R2 é a fonte durável; o disco é o cache.
+
 ### 3.2 A nossa API
 
 31 arquivos, que **não** vêm do FusionPBX. Saem do repo `pabx`:
