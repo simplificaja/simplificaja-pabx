@@ -124,23 +124,22 @@ class api_saude {
 				'sem registro: não entra nem sai ligação por este número');
 		}
 
-		// 6. Ramais com senha fraca ou vazia. Credencial SIP fica exposta na
-		//    internet, e fraude tarifária é o risco real desta operação: a conta
-		//    das ligações chega para o cliente, não para quem varreu.
+		// 6. Ramal SEM senha nenhuma. Não é julgamento de força de senha: ramal
+		//    com senha vazia não consegue registrar, então é falha de
+		//    provisionamento e o telefone simplesmente não funciona.
 		//
-		//    Dizer "1 ramal(is)" sem dizer QUAL obrigava a abrir a aba e conferir
-		//    um por um -- e o aviso que não diz o que fazer vira ruído que se
-		//    aprende a ignorar. Nomeia o ramal e aponta o botão.
-		$fracos = array_column((array) $db->select(
+		//    A regra de tamanho mínimo saiu em 01/10/2026 por decisão do Isaac: ele
+		//    escolhe as senhas dos ramais e não quer ser avisado sobre o tamanho
+		//    delas. Eu levantei o risco de fraude tarifária e ele manteve a
+		//    decisão. Não reintroduzir sem ele pedir.
+		$sem_senha = array_column((array) $db->select(
 			"select extension from v_extensions "
-			."where domain_uuid = :u and (password is null or length(password) < 12) "
+			."where domain_uuid = :u and coalesce(password, '') = '' "
 			."order by extension",
 			['u' => $domain_uuid], 'all'
 		) ?? [], 'extension');
-		$r[] = self::item('ramais com senha forte', empty($fracos),
-			'ramal ' . implode(', ', $fracos) . ' com senha curta: a credencial fica '
-			. 'exposta na internet e a conta da fraude chega para o cliente. '
-			. 'Trocar em Ramais, botão Senha');
+		$r[] = self::item('ramais com senha', empty($sem_senha),
+			'ramal ' . implode(', ', $sem_senha) . ' sem senha: o softphone não registra');
 
 		// 7. Gravação sem base64. O painel do FusionPBX toca o base64 e a chamada
 		//    toca o arquivo; sem ele o áudio funciona na ligação e o botão de
