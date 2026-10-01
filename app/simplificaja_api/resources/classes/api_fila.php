@@ -378,7 +378,8 @@ class api_fila {
 			// pacote, e o buffer de jitter da operadora só sincroniza quando
 			// começa a receber áudio -- então o começo da saudação é que se
 			// perdia. Mesmo defeito que apareceu no anúncio.
-			$xml .= '		<action application="playback" data="silence_stream://1500"/>' . "\n";
+			$xml .= '		<action application="playback" data="silence_stream://'
+				. api_anuncio::ESPERA_ANTES_DO_AUDIO . '"/>' . "\n";
 			$xml .= '		<action application="playback" data="' . xml::sanitize($saudacao) . '"/>' . "\n";
 		}
 		$xml .= '		<action application="callcenter" data="' . xml::sanitize($ramal) . '@' . $dominio . '"/>' . "\n";

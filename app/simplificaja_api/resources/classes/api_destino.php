@@ -13,6 +13,20 @@
  */
 class api_destino {
 
+	/**
+	 * Quanto tempo o telefone de quem liga toca antes de o PABX atender.
+	 *
+	 * Central que atende no ato parece defeito e come a saudação: o PABX
+	 * atendia 60ms depois do INVITE, e quem ligou perdia a primeira frase
+	 * porque ainda estava levando o aparelho ao ouvido. Toque é o sinal que faz
+	 * a pessoa parar e escutar.
+	 *
+	 * No Brasil a cadência é 1s tocando e 4s em silêncio, então isto dá um
+	 * toque inteiro. Ajustar aqui exige salvar de novo o número na ficha,
+	 * porque o XML da rota é gerado na gravação.
+	 */
+	const TOQUE_ANTES_DE_ATENDER = 3000;
+
 	/** app_uuid do app Inbound Routes; sem ele a rota não é reconhecida como destino. */
 	const APP_INBOUND = 'c03b422e-13a8-bd1b-e42b-b6b9b4d27ce4';
 
@@ -96,6 +110,40 @@ class api_destino {
 			'dialplan_detail_order' => '015',
 			'dialplan_detail_group' => '0',
 			'dialplan_detail_inline'=> 'true',
+		];
+		// Toca antes de atender, e o toque mora AQUI e nao em cada peça: uma
+		// ligação que passe por anúncio, menu e fila atenderia três vezes, e
+		// cada peça somaria o seu próprio toque no meio da conversa. A porta é
+		// uma só.
+		//
+		// Medido com ligação real: o PABX atendia 60ms depois do INVITE, antes
+		// do primeiro toque. Quem liga ainda está levando o aparelho ao ouvido
+		// enquanto a saudação já tocou -- e perdia o "Olá, você ligou". O áudio
+		// sai certo (75 pacotes nos primeiros 1,5s, cadência de 50/s, conferido
+		// na captura): o que faltava era alguém escutando.
+		$array['dialplans'][0]['dialplan_details'][$d++] = [
+			'dialplan_detail_uuid'  => uuid(),
+			'dialplan_uuid'         => $dialplan_uuid,
+			'domain_uuid'           => $domain_uuid,
+			'dialplan_detail_tag'   => 'action',
+			'dialplan_detail_type'  => 'ring_ready',
+			'dialplan_detail_data'  => '',
+			'dialplan_detail_order' => '016',
+			'dialplan_detail_group' => '0',
+		];
+		// `sleep` é o certo aqui, ao contrário de depois do `answer`: durante o
+		// toque NÃO devemos mandar áudio -- a operadora gera o toque para quem
+		// ligou a partir do nosso 180. Mandar pacote aqui atropelaria o toque
+		// dela. Não trocar por `silence_stream`.
+		$array['dialplans'][0]['dialplan_details'][$d++] = [
+			'dialplan_detail_uuid'  => uuid(),
+			'dialplan_uuid'         => $dialplan_uuid,
+			'domain_uuid'           => $domain_uuid,
+			'dialplan_detail_tag'   => 'action',
+			'dialplan_detail_type'  => 'sleep',
+			'dialplan_detail_data'  => (string) self::TOQUE_ANTES_DE_ATENDER,
+			'dialplan_detail_order' => '017',
+			'dialplan_detail_group' => '0',
 		];
 		$array['dialplans'][0]['dialplan_details'][$d++] = [
 			'dialplan_detail_uuid'  => uuid(),

@@ -21,14 +21,24 @@ class api_anuncio {
 	const FAIXA_INICIO = 8000;
 	const FAIXA_FIM = 8999;
 
-	/** Silêncio tocado antes do áudio, para o outro lado terminar de abrir o
-	 *  canal de voz.
+	/**
+	 * Silêncio tocado logo depois do `answer`, antes de qualquer áudio.
 	 *
-	 *  `sleep` não serve: ele espera sem mandar pacote nenhum, e o buffer de
-	 *  jitter da operadora só sincroniza quando começa a receber áudio -- então
-	 *  os primeiros pacotes reais é que viravam o pedaço perdido. Com 1000 e
-	 *  depois 2000 de `sleep` o começo continuou cortado em ligação real.
-	 *  `silence_stream` manda silêncio de verdade e o buffer chega pronto. */
+	 * Não é estética: é o tempo que a operadora leva para ligar o caminho de
+	 * áudio até o celular depois do nosso `200 OK`. Durante essa janela o que
+	 * sai daqui é descartado, e quem ligou perde o começo da frase.
+	 *
+	 * Tem que ser `playback silence_stream://`, nunca `sleep`: o `sleep` espera
+	 * SEM mandar pacote, e o buffer de jitter da operadora só sincroniza quando
+	 * começa a receber áudio. Medido na linha do tempo do log: o RTP é
+	 * estabelecido no mesmo instante do `answer`, e o silêncio sai inteiro como
+	 * pacote de verdade.
+	 *
+	 * Referência compartilhada: `api_fila` e `api_ura` usam esta mesma constante,
+	 * porque o problema é da operadora e não de quem toca o áudio. Valor achado
+	 * por medição com ligação real -- mexer aqui exige salvar de novo o anúncio,
+	 * o menu ou a fila, porque o XML é gerado na gravação.
+	 */
 	const ESPERA_ANTES_DO_AUDIO = 1500;
 
 	private static function db() {

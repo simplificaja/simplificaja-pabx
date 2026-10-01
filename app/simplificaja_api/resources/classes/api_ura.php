@@ -277,7 +277,12 @@ class api_ura {
 		$xml  = '<extension name="' . xml::sanitize($dados['nome']) . '" continue="false" uuid="' . uuid() . '">' . "\n";
 		$xml .= '	<condition field="destination_number" expression="^' . $ramal . '$">' . "\n";
 		$xml .= '		<action application="answer" data=""/>' . "\n";
-		$xml .= '		<action application="sleep" data="500"/>' . "\n";
+		// `sleep` espera SEM mandar pacote, entao o buffer de jitter da operadora
+		// nao sincroniza e o comeco da saudacao do menu se perde -- o mesmo
+		// defeito que aparecia no anuncio. Silencio de verdade, e o mesmo tempo
+		// que o anuncio usa: o atraso e' da operadora, nao de quem toca.
+		$xml .= '		<action application="playback" data="silence_stream://'
+			. api_anuncio::ESPERA_ANTES_DO_AUDIO . '"/>' . "\n";
 		// As duas variaveis que fazem a opcao voltar ao menu em vez de matar a
 		// ligacao. Medido: sem `continue_on_fail`, o `bridge` para um ramal
 		// fora do ar derruba o canal com USER_NOT_REGISTERED e quem ligou ouve
