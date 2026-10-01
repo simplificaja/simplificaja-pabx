@@ -160,13 +160,8 @@ class api_dominio {
 			$p->add($permissao, 'temp');
 		}
 
-		$db->execute("delete from v_destinations where domain_uuid = :u", ['u' => $domain_uuid]);
-		$db->execute("delete from v_dialplan_details where domain_uuid = :u", ['u' => $domain_uuid]);
-		$db->execute("delete from v_dialplans where domain_uuid = :u", ['u' => $domain_uuid]);
-		$db->execute("delete from v_gateways where domain_uuid = :u", ['u' => $domain_uuid]);
-		$db->execute("delete from v_extensions where domain_uuid = :u", ['u' => $domain_uuid]);
-		$db->execute("delete from v_domain_settings where domain_uuid = :u", ['u' => $domain_uuid]);
-		$db->execute("delete from v_domains where domain_uuid = :u", ['u' => $domain_uuid]);
+		self::apagar_tudo_do_dominio($db, $domain_uuid);
+		self::apagar_audios($nome);
 
 		foreach (['domain_delete', 'extension_delete', 'gateway_delete',
 		          'destination_delete', 'dialplan_delete'] as $permissao) {
@@ -201,6 +196,75 @@ class api_dominio {
 	 *
 	 * Detectar depois é pior que limpar agora: nenhuma tela mostra isso.
 	 */
+	/**
+	 * Apaga as linhas de TODAS as tabelas do domínio, descobrindo quais são.
+	 *
+	 * A versão anterior listava sete tabelas à mão e deixava para trás filas,
+	 * atendentes de fila, menus, grupos de toque, gravações, usuários do portal,
+	 * correio de voz e o histórico de ligações -- tudo com `domain_uuid`, tudo
+	 * invisível depois que o domínio some, e tudo ainda ocupando número. São 85
+	 * tabelas nesta versão, e lista chumbada envelhece a cada atualização do
+	 * FusionPBX.
+	 *
+	 * Varrer o catálogo resolve os dois problemas, e é seguro aqui por duas
+	 * razões: não há chave estrangeira nenhuma entre as tabelas `v_*` (conferido:
+	 * zero), então a ordem não importa; e o nome da tabela vem do próprio
+	 * catálogo do Postgres, nunca de entrada de fora.
+	 *
+	 * `v_domains` por último: enquanto ela existe, dá para recomeçar se algo
+	 * falhar no meio.
+	 */
+	private static function apagar_tudo_do_dominio($db, string $domain_uuid): void {
+		$tabelas = $db->select(
+			"select t.table_name from information_schema.tables t "
+			."where t.table_type = 'BASE TABLE' and t.table_schema = 'public' "
+			."and t.table_name like 'v\\_%' "
+			."and exists (select 1 from information_schema.columns c "
+			."            where c.table_schema = t.table_schema "
+			."            and c.table_name = t.table_name "
+			."            and c.column_name = 'domain_uuid') "
+			."order by (t.table_name = 'v_domains'), t.table_name",
+			[], 'all'
+		) ?? [];
+
+		foreach ($tabelas as $tabela) {
+			$nome = $tabela['table_name'];
+			// Vindo do catalogo, mas conferido assim mesmo: nome de tabela nao
+			// entra em prepared statement, entao e o unico pedaco interpolado.
+			if (!preg_match('/^v_[a-z0-9_]+$/', $nome)) {
+				continue;
+			}
+			$db->execute("delete from $nome where domain_uuid = :u", ['u' => $domain_uuid]);
+		}
+	}
+
+	/**
+	 * A pasta de áudios do cliente, que não está no banco.
+	 *
+	 * Sem isto a saudação e a música de espera do cliente removido ficam no
+	 * disco para sempre. `basename` porque o nome vem do banco mas vira caminho:
+	 * um domínio chamado `../..` não pode escapar da pasta de gravações.
+	 */
+	private static function apagar_audios(string $dominio): void {
+		$socket = event_socket::create();
+		$base = ($socket && $socket->is_connected())
+			? trim((string) event_socket::api('global_getvar recordings_dir'))
+			: '';
+		if ($base === '') {
+			return;
+		}
+		$pasta = rtrim($base, '/') . '/' . basename($dominio);
+		if (!is_dir($pasta)) {
+			return;
+		}
+		foreach (glob($pasta . '/*') ?: [] as $arquivo) {
+			if (is_file($arquivo)) {
+				unlink($arquivo);
+			}
+		}
+		@rmdir($pasta);
+	}
+
 	private static function limpar_fora_do_banco($db, string $domain_uuid): void {
 		$gateways = $db->select(
 			"select gateway_uuid, proxy from v_gateways where domain_uuid = :u",

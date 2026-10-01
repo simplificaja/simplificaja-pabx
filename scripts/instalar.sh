@@ -67,6 +67,13 @@ mkdir -p "$DESTINO"
 cp -r "$REPO/app/simplificaja_api/." "$DESTINO/"
 chown -R www-data:www-data "$DESTINO"
 ok "copiado para $DESTINO"
+# Portal de leitura para o perfil de cliente.
+PORTAL=/var/www/fusionpbx/app/simplificaja_portal
+mkdir -p "$PORTAL"
+cp -r "$REPO/app/simplificaja_portal/." "$PORTAL/"
+chown -R www-data:www-data "$PORTAL"
+su - postgres -c "psql -v ON_ERROR_STOP=1 -d fusionpbx -f '$REPO/scripts/configurar-portal.sql'"
+ok "portal do cliente e menus instalados"
 # O app aparece no menu depois que o FusionPBX relê os apps:
 echo "   Depois: Advanced → Upgrade → App Defaults, ou"
 echo "     php /var/www/fusionpbx/core/upgrade/upgrade.php"
