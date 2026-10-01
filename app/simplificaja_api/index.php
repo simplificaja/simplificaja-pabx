@@ -226,7 +226,9 @@
 		case 'POST horarios':
 			responde(api_horario::criar($domain_uuid, corpo()), 201);
 
-		case 'PATCH horarios':
+		// `POST horario-editar` e nao `PATCH horarios`: o cliente do hub so fala
+		// get, post e delete, e anuncio e fila ja editam por rota POST propria.
+		case 'POST horario-editar':
 			responde(api_horario::editar($domain_uuid, corpo()));
 
 		case 'DELETE horarios':
