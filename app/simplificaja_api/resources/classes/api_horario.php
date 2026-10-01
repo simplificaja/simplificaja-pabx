@@ -294,11 +294,7 @@ class api_horario {
 		$regras = self::validar((array) ($dados['regras'] ?? []));
 
 		$dominio = self::nome_do_dominio($domain_uuid);
-		// `numero_fixo` existe para `editar` preservar o número: quem aponta
-		// para o horário guarda esse endereço, e trocar quebraria a entrada.
-		$numero = trim((string) ($dados['numero_fixo'] ?? '')) !== ''
-			? (string) $dados['numero_fixo']
-			: self::proximo_livre($domain_uuid);
+		$numero = self::proximo_livre($domain_uuid);
 
 		$permissoes = ['dialplan_add', 'dialplan_edit'];
 		$p = permissions::new();
@@ -397,6 +393,70 @@ class api_horario {
 		return array_map('intval', explode(',', $texto));
 	}
 
+	/**
+	 * Edita no lugar, sem recriar.
+	 *
+	 * Da para atualizar o mesmo plano porque o XML e gerado inteiro a cada vez:
+	 * nao ha estado em memoria como o do mod_callcenter -- que e por que
+	 * `api_fila::editar` tem de apagar e recriar -- nem vinculo em outra tabela.
+	 * Mesmo caminho do anuncio.
+	 *
+	 * O numero nao muda, e isso e o ponto: ele e endereco. Quem aponta para o
+	 * horario guarda esse endereco, e trocar quebraria a entrada sem avisar.
+	 * Atualizar no lugar faz disso uma garantia em vez de um cuidado.
+	 */
+	public static function editar(string $domain_uuid, array $dados): array {
+		$numero = trim((string) ($dados['numero'] ?? ''));
+		if ($numero === '') {
+			responde(['erro' => 'numero é obrigatório'], 422);
+		}
+		$nome = trim((string) ($dados['nome'] ?? ''));
+		if ($nome === '') {
+			responde(['erro' => 'nome é obrigatório'], 422);
+		}
+		$regras = self::validar((array) ($dados['regras'] ?? []));
+
+		$db = self::db();
+		$uuid = $db->select(
+			"select dialplan_uuid from v_dialplans "
+			."where domain_uuid = :u and app_uuid = :a and dialplan_number = :n",
+			['u' => $domain_uuid, 'a' => self::APP_UUID, 'n' => $numero], 'column'
+		);
+		if (empty($uuid)) {
+			responde(['erro' => "não existe horário no número $numero"], 404);
+		}
+
+		$dominio = self::nome_do_dominio($domain_uuid);
+		$permissoes = ['dialplan_add', 'dialplan_edit'];
+		$p = permissions::new();
+		foreach ($permissoes as $permissao) {
+			$p->add($permissao, 'temp');
+		}
+
+		$array = [];
+		$array['dialplans'][0] = self::dialplan($domain_uuid, (string) $uuid, $dominio, $numero,
+			$nome, $regras, (string) ($dados['descricao'] ?? ''));
+		$db->save($array);
+		self::exigir_gravado($db, "o horário $numero");
+		unset($array);
+
+		foreach ($permissoes as $permissao) {
+			$p->delete($permissao, 'temp');
+		}
+
+		self::recarregar($dominio);
+		return ['horario' => $nome, 'numero' => $numero, 'regras' => count($regras)];
+	}
+
+	/**
+	 * Remove sem checar quem aponta, de propósito.
+	 *
+	 * Nenhuma classe desta API bloqueia remoção por estar em uso, e inventar a
+	 * exceção aqui seria incoerente. A prevenção mora na ficha, que e' onde esta
+	 * a pessoa: o botão pergunta nomeando a consequência, como já faz o da fila,
+	 * e o caminho da ligação mostra em vermelho quem aponta para o que não
+	 * existe mais.
+	 */
 	public static function remover(string $domain_uuid, string $numero): array {
 		$db = self::db();
 		$linha = $db->select(

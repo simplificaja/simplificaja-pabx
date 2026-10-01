@@ -226,6 +226,9 @@
 		case 'POST horarios':
 			responde(api_horario::criar($domain_uuid, corpo()), 201);
 
+		case 'PATCH horarios':
+			responde(api_horario::editar($domain_uuid, corpo()));
+
 		case 'DELETE horarios':
 			$numero = trim((string) (corpo()['numero'] ?? ''));
 			if ($numero === '') { responde(['erro' => 'numero é obrigatório'], 422); }
