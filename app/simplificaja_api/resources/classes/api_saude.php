@@ -23,6 +23,20 @@ class api_saude {
 		return (string) event_socket::api($comando);
 	}
 
+	/**
+	 * Todos os IPs de um host, que pode vir como nome.
+	 *
+	 * Operadora costuma ter mais de um servidor, e basta um ficar de fora da ACL
+	 * para a ligação de entrada por aquele sumir -- intermitente, que é o pior
+	 * de diagnosticar.
+	 */
+	private static function ips_do_host(string $host): array {
+		if (filter_var($host, FILTER_VALIDATE_IP)) {
+			return [$host];
+		}
+		return @gethostbynamel($host) ?: [];
+	}
+
 	private static function item(string $checagem, bool $ok, ?string $detalhe = null): array {
 		return ['checagem' => $checagem, 'ok' => $ok, 'detalhe' => $ok ? null : $detalhe];
 	}
@@ -103,15 +117,33 @@ class api_saude {
 		) ?? [];
 
 		foreach ($gateways as $g) {
-			$liberado = (int) $db->select(
-				"select count(*) as n from v_access_control_nodes n "
-				."join v_access_controls a on a.access_control_uuid = n.access_control_uuid "
-				."where a.access_control_name = 'providers' and n.node_type = 'allow' "
-				."and n.node_cidr like :p",
-				['p' => $g['proxy'] . '%'], 'column'
-			);
-			$r[] = self::item("IP {$g['proxy']} liberado no Event Guard", $liberado > 0,
-				'fora da lista providers: o Event Guard vai banir a operadora e tudo dá timeout');
+			// O host pode vir como NOME, e a ACL do FreeSWITCH só entende IP.
+			// Comparar o nome cru contra CIDR nunca casa, então a versão anterior
+			// acusava para sempre todo tronco com host por nome -- aviso que
+			// grita no caso certo é aviso que se aprende a ignorar.
+			$ips = self::ips_do_host($g['proxy']);
+			if (empty($ips)) {
+				$r[] = self::item("operadora {$g['proxy']} liberada no Event Guard", false,
+					'o nome não resolve para IP nenhum: confira o host com a operadora');
+				continue;
+			}
+
+			$faltando = [];
+			foreach ($ips as $ip) {
+				$liberado = (int) $db->select(
+					"select count(*) as n from v_access_control_nodes n "
+					."join v_access_controls a on a.access_control_uuid = n.access_control_uuid "
+					."where a.access_control_name = 'providers' and n.node_type = 'allow' "
+					."and n.node_cidr like :p",
+					['p' => $ip . '%'], 'column'
+				);
+				if ($liberado === 0) {
+					$faltando[] = $ip;
+				}
+			}
+			$r[] = self::item("operadora {$g['proxy']} liberada no Event Guard", empty($faltando),
+				implode(', ', $faltando) . ' fora da lista providers: o Event Guard bane a operadora '
+				. 'e a ligação de ENTRADA some em timeout, sem erro em lugar nenhum');
 		}
 
 		// 5. Troncos registrados. O sofia status identifica por UUID, não por nome.

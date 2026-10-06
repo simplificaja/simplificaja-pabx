@@ -124,8 +124,21 @@ class api_tronco {
 	 * `rescan` e nunca `restart`: restart derruba o tronco de todos os tenants.
 	 */
 	private static function recarregar(): void {
-		$cache = new cache();
-		$cache->delete(gethostname() . ':configuration:sofia.conf');
+		// DUAS configuracoes, nao uma: o tronco mexe no `sofia.conf` (o gateway) e
+		// na `acl.conf` (o IP liberado no Event Guard). A versao anterior limpava
+		// so a do sofia, e o `reloadacl` abaixo relia a lista VELHA do cache --
+		// o IP entrava no banco e nao entrava na lista viva do FreeSWITCH.
+		//
+		// O sintoma era o pior possivel: o tronco registrava, a saida funcionava,
+		// e a ligacao de ENTRADA voltava CALL_REJECTED em CS_NEW, antes de
+		// qualquer roteamento, sem nada no CDR. Aconteceu com a GTGI.
+		//
+		// E sao TRES chaves por configuracao, nao uma: o FusionPBX grava tambem
+		// prefixada e sufixada pelo nome do host (`remove_config_from_cache()` em
+		// resources/switch.php). Limpar so uma deixa as outras duas vivas.
+		foreach (['configuration:sofia.conf', 'configuration:acl.conf'] as $nome) {
+			self::limpar_config($nome);
+		}
 
 		$socket = event_socket::create();
 		if ($socket && $socket->is_connected()) {
@@ -133,6 +146,40 @@ class api_tronco {
 			event_socket::api('reloadacl');
 			event_socket::api('sofia profile external rescan');
 		}
+	}
+
+	/** As tres variantes de chave que o FusionPBX usa para a mesma configuracao. */
+	private static function limpar_config(string $nome): void {
+		$cache = new cache();
+		$cache->delete($nome);
+		$cache->delete(gethostname() . ':' . $nome);
+		$cache->delete($nome . ':' . gethostname());
+	}
+
+	/**
+	 * O IP de um host que pode vir como nome.
+	 *
+	 * A ACL do FreeSWITCH só entende IP, e a versão anterior disto devolvia
+	 * `false` quando o host era nome -- em silêncio. O tronco era criado,
+	 * registrava normalmente, e a ligação de ENTRADA era banida pelo Event
+	 * Guard sem nada dizer por quê: o pior tipo de defeito que existe aqui.
+	 * Aconteceu com a GTGI, cujo host foi cadastrado como
+	 * `gt.pabx.simplificaja.com.br`.
+	 *
+	 * Resolver é a correção certa, e não um remendo: quem opera digita o que a
+	 * operadora manda, e operadora manda nome tanto quanto IP.
+	 *
+	 * Limite honesto, e está na mensagem para quem lê a ficha: se a operadora
+	 * trocar o IP por trás do nome, a liberação envelhece e a entrada volta a
+	 * ser banida. Nome que resolve para VÁRIOS IPs também só tem o primeiro
+	 * liberado -- por isso devolve a lista inteira e todos são liberados.
+	 */
+	/** Todos os IPs do host, porque operadora costuma ter mais de um servidor. */
+	private static function ips_do_host(string $host): array {
+		if (filter_var($host, FILTER_VALIDATE_IP)) {
+			return [$host];
+		}
+		return @gethostbynamel($host) ?: [];
 	}
 
 	/**
@@ -146,17 +193,9 @@ class api_tronco {
 	 * para todos. É inerente ao FreeSWITCH, cujas ACLs não têm domínio.
 	 */
 	private static function liberar_ip($db, string $host): bool {
-		if (!filter_var($host, FILTER_VALIDATE_IP)) {
-			// host por nome: não dá para pôr em ACL, e o Event Guard só bane IP
+		$ips = self::ips_do_host($host);
+		if (empty($ips)) {
 			return false;
-		}
-
-		$ja = (int) $db->select(
-			"select count(*) as n from v_access_control_nodes where node_cidr = :c",
-			['c' => $host . '/32'], 'column'
-		);
-		if ($ja > 0) {
-			return true;
 		}
 
 		$acl = $db->select(
@@ -169,14 +208,31 @@ class api_tronco {
 
 		$p = permissions::new();
 		$p->add('access_control_node_add', 'temp');
-		$array['access_control_nodes'][0] = [
-			'access_control_node_uuid' => uuid(),
-			'access_control_uuid'      => $acl,
-			'node_type'                => 'allow',
-			'node_cidr'                => $host . '/32',
-			'node_description'         => 'tronco criado pela API do SimplificaJá',
-		];
-		$db->save($array);
+
+		$novos = [];
+		foreach ($ips as $ip) {
+			$ja = (int) $db->select(
+				"select count(*) as n from v_access_control_nodes where node_cidr = :c",
+				['c' => $ip . '/32'], 'column'
+			);
+			if ($ja > 0) {
+				continue;
+			}
+			// A descrição carrega o host ORIGINAL: daqui a um ano, olhando a
+			// lista, `200.201.197.137/32` sozinho não diz de quem é.
+			$novos[] = [
+				'access_control_node_uuid' => uuid(),
+				'access_control_uuid'      => $acl,
+				'node_type'                => 'allow',
+				'node_cidr'                => $ip . '/32',
+				'node_description'         => 'operadora ' . $host . ' - tronco pela API do SimplificaJá',
+			];
+		}
+
+		if (!empty($novos)) {
+			$array = ['access_control_nodes' => $novos];
+			$db->save($array);
+		}
 		$p->delete('access_control_node_add', 'temp');
 
 		return true;
