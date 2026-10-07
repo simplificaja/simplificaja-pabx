@@ -107,6 +107,15 @@ su - postgres -c "psql -d fusionpbx -f /tmp/aplicar-configuracao.sql"
 rm -f /tmp/aplicar-configuracao.sql
 ok "aplicadas"
 
+# A tabela da pesquisa de avaliação. Com ON_ERROR_STOP porque, diferente das
+# configurações acima, aqui um erro significa que a tabela não existe -- e a
+# pesquisa falharia em silêncio, gravando nota em lugar nenhum.
+cp "$REPO/scripts/configurar-pesquisa.sql" /tmp/configurar-pesquisa.sql
+chmod 644 /tmp/configurar-pesquisa.sql
+su - postgres -c "psql -v ON_ERROR_STOP=1 -d fusionpbx -f /tmp/configurar-pesquisa.sql"
+rm -f /tmp/configurar-pesquisa.sql
+ok "tabela da pesquisa de avaliação"
+
 # --------------------------------------------------------------- 8. o cache
 etapa "8. Cache"
 # Sem isto nada do que foi mudado tem efeito: o FusionPBX continua servindo o
