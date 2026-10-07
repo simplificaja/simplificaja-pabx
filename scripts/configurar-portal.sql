@@ -20,19 +20,22 @@ delete from v_menu_item_groups
 where menu_item_uuid in (
   'd24e33c8-0b88-4aaf-9c3c-5d996b641011',
   'd24e33c8-0b88-4aaf-9c3c-5d996b641012',
-  'd24e33c8-0b88-4aaf-9c3c-5d996b641013'
+  'd24e33c8-0b88-4aaf-9c3c-5d996b641013',
+  'd24e33c8-0b88-4aaf-9c3c-5d996b641014'
 );
 delete from v_menu_languages
 where menu_item_uuid in (
   'd24e33c8-0b88-4aaf-9c3c-5d996b641011',
   'd24e33c8-0b88-4aaf-9c3c-5d996b641012',
-  'd24e33c8-0b88-4aaf-9c3c-5d996b641013'
+  'd24e33c8-0b88-4aaf-9c3c-5d996b641013',
+  'd24e33c8-0b88-4aaf-9c3c-5d996b641014'
 );
 delete from v_menu_items
 where menu_item_uuid in (
   'd24e33c8-0b88-4aaf-9c3c-5d996b641011',
   'd24e33c8-0b88-4aaf-9c3c-5d996b641012',
-  'd24e33c8-0b88-4aaf-9c3c-5d996b641013'
+  'd24e33c8-0b88-4aaf-9c3c-5d996b641013',
+  'd24e33c8-0b88-4aaf-9c3c-5d996b641014'
 );
 
 insert into v_menu_items (
@@ -41,13 +44,15 @@ insert into v_menu_items (
 ) values
   ('d24e33c8-0b88-4aaf-9c3c-5d996b641011', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'b837c17d-e326-4c37-9205-417937a588a5', 'd24e33c8-0b88-4aaf-9c3c-5d996b641001', 'Visão geral', '/app/simplificaja_portal/index.php?view=dashboard', 'fa-solid fa-gauge-high', 'internal', 1, now()),
   ('d24e33c8-0b88-4aaf-9c3c-5d996b641012', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', '2fbe35e3-c82e-411f-b357-48e4c17d3add', 'd24e33c8-0b88-4aaf-9c3c-5d996b641002', 'Ligações', '/app/simplificaja_portal/index.php?view=calls', 'fa-solid fa-phone-volume', 'internal', 1, now()),
-  ('d24e33c8-0b88-4aaf-9c3c-5d996b641013', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', '2fbe35e3-c82e-411f-b357-48e4c17d3add', 'd24e33c8-0b88-4aaf-9c3c-5d996b641003', 'Ramais', '/app/simplificaja_portal/index.php?view=extensions', 'fa-solid fa-headset', 'internal', 2, now());
+  ('d24e33c8-0b88-4aaf-9c3c-5d996b641013', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', '2fbe35e3-c82e-411f-b357-48e4c17d3add', 'd24e33c8-0b88-4aaf-9c3c-5d996b641003', 'Ramais', '/app/simplificaja_portal/index.php?view=extensions', 'fa-solid fa-headset', 'internal', 2, now()),
+  ('d24e33c8-0b88-4aaf-9c3c-5d996b641014', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', '2fbe35e3-c82e-411f-b357-48e4c17d3add', 'd24e33c8-0b88-4aaf-9c3c-5d996b641004', 'Avaliações', '/app/simplificaja_portal/index.php?view=ratings', 'fa-solid fa-star', 'internal', 3, now());
 
 insert into v_menu_item_groups (menu_item_group_uuid, menu_uuid, menu_item_uuid, group_name, group_uuid, insert_date)
 values
   ('d24e33c8-0b88-4aaf-9c3c-5d996b641021', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641011', 'user', 'e5ab28b7-1aa7-4e65-ad5e-6adbd9222e76', now()),
   ('d24e33c8-0b88-4aaf-9c3c-5d996b641022', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641012', 'user', 'e5ab28b7-1aa7-4e65-ad5e-6adbd9222e76', now()),
-  ('d24e33c8-0b88-4aaf-9c3c-5d996b641023', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641013', 'user', 'e5ab28b7-1aa7-4e65-ad5e-6adbd9222e76', now());
+  ('d24e33c8-0b88-4aaf-9c3c-5d996b641023', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641013', 'user', 'e5ab28b7-1aa7-4e65-ad5e-6adbd9222e76', now()),
+  ('d24e33c8-0b88-4aaf-9c3c-5d996b641024', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641014', 'user', 'e5ab28b7-1aa7-4e65-ad5e-6adbd9222e76', now());
 
 insert into v_menu_languages (menu_language_uuid, menu_uuid, menu_item_uuid, menu_language, menu_item_title, insert_date)
 values
@@ -56,7 +61,9 @@ values
   ('d24e33c8-0b88-4aaf-9c3c-5d996b641033', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641013', 'en-us', 'Extensions', now()),
   ('d24e33c8-0b88-4aaf-9c3c-5d996b641034', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641011', 'pt-br', 'Visão geral', now()),
   ('d24e33c8-0b88-4aaf-9c3c-5d996b641035', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641012', 'pt-br', 'Ligações', now()),
-  ('d24e33c8-0b88-4aaf-9c3c-5d996b641036', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641013', 'pt-br', 'Ramais', now());
+  ('d24e33c8-0b88-4aaf-9c3c-5d996b641036', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641013', 'pt-br', 'Ramais', now()),
+  ('d24e33c8-0b88-4aaf-9c3c-5d996b641037', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641014', 'en-us', 'Ratings', now()),
+  ('d24e33c8-0b88-4aaf-9c3c-5d996b641038', 'b4750c3f-2a86-b00d-b7d0-345c14eca286', 'd24e33c8-0b88-4aaf-9c3c-5d996b641014', 'pt-br', 'Avaliações', now());
 
 -- Após o login, usuários do grupo user entram na nova visão geral. É uma
 -- preferência por usuário; administradores continuam no destino padrão.

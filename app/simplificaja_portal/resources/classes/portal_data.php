@@ -234,6 +234,65 @@ class simplificaja_portal_data {
 		return $rows;
 	}
 
+	/**
+	 * As notas que o cliente digitou no fim da ligação.
+	 *
+	 * O escopo segue o mesmo de todas as consultas daqui: `extension_scope_sql`
+	 * compara `extension_uuid`, e é por isso que a tabela guarda o uuid do ramal
+	 * e não só o número. Perfil `user` sem visão de domínio vê as notas dos
+	 * ramais dele; quem tem `xml_cdr_domain` vê o domínio inteiro.
+	 */
+	public function rating_summary(DateTimeImmutable $since): array {
+		$sql = "select count(*) as respostas, round(avg(p.nota), 2) as media ";
+		$sql .= "from v_simplificaja_pesquisas p ";
+		$sql .= "where p.domain_uuid = :domain_uuid and p.criado_em >= :since ";
+		$parameters = ['domain_uuid' => $this->domain_uuid, 'since' => $since->format('Y-m-d H:i:sP')];
+		$sql .= $this->extension_scope_sql('p.extension_uuid', $parameters, $this->cdr_domain_view);
+		$rows = $this->database->select($sql, $parameters, 'all');
+		if (!is_array($rows) || empty($rows[0])) {
+			return ['respostas' => 0, 'media' => null];
+		}
+		return $rows[0];
+	}
+
+	public function rating_distribution(DateTimeImmutable $since): array {
+		$sql = "select p.nota, count(*) as total from v_simplificaja_pesquisas p ";
+		$sql .= "where p.domain_uuid = :domain_uuid and p.criado_em >= :since ";
+		$parameters = ['domain_uuid' => $this->domain_uuid, 'since' => $since->format('Y-m-d H:i:sP')];
+		$sql .= $this->extension_scope_sql('p.extension_uuid', $parameters, $this->cdr_domain_view);
+		$sql .= "group by p.nota order by p.nota desc";
+		$rows = $this->database->select($sql, $parameters, 'all');
+		return is_array($rows) ? $rows : [];
+	}
+
+	/** Menor média primeiro: é a lista que o gestor abre para agir. */
+	public function rating_by_extension(DateTimeImmutable $since): array {
+		$sql = "select coalesce(p.ramal, 'sem ramal') as ramal, count(*) as respostas, ";
+		$sql .= "round(avg(p.nota), 2) as media from v_simplificaja_pesquisas p ";
+		$sql .= "where p.domain_uuid = :domain_uuid and p.criado_em >= :since ";
+		$parameters = ['domain_uuid' => $this->domain_uuid, 'since' => $since->format('Y-m-d H:i:sP')];
+		$sql .= $this->extension_scope_sql('p.extension_uuid', $parameters, $this->cdr_domain_view);
+		$sql .= "group by coalesce(p.ramal, 'sem ramal') order by media asc, respostas desc";
+		$rows = $this->database->select($sql, $parameters, 'all');
+		return is_array($rows) ? $rows : [];
+	}
+
+	public function rating_history(int $days, string $search): array {
+		$since = new DateTimeImmutable('-'.max(1, min($days, 90)).' days');
+		$sql = "select p.criado_em, p.nota, p.ramal, p.fila, p.telefone ";
+		$sql .= "from v_simplificaja_pesquisas p ";
+		$sql .= "where p.domain_uuid = :domain_uuid and p.criado_em >= :since ";
+		$parameters = ['domain_uuid' => $this->domain_uuid, 'since' => $since->format('Y-m-d H:i:sP')];
+		$sql .= $this->extension_scope_sql('p.extension_uuid', $parameters, $this->cdr_domain_view);
+		if ($search !== '') {
+			$sql .= "and (p.telefone ilike :search or p.ramal ilike :search) ";
+			$parameters['search'] = '%'.$search.'%';
+		}
+		$sql .= "order by p.criado_em desc limit 200";
+		$rows = $this->database->select($sql, $parameters, 'all');
+		return is_array($rows) ? $rows : [];
+	}
+
 	public function domain_name(): string {
 		return $this->domain_name;
 	}

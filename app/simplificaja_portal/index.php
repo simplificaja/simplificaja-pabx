@@ -18,10 +18,10 @@ if (empty($_SESSION['domain_uuid'])) {
 
 $portal = new simplificaja_portal_data($database);
 $view = $_GET['view'] ?? 'dashboard';
-if (!in_array($view, ['dashboard', 'calls', 'extensions'], true)) {
+if (!in_array($view, ['dashboard', 'calls', 'extensions', 'ratings'], true)) {
 	$view = 'dashboard';
 }
-if ($view === 'calls' && !permission_exists('xml_cdr_view')) {
+if (in_array($view, ['calls', 'ratings'], true) && !permission_exists('xml_cdr_view')) {
 	http_response_code(403);
 	exit('access denied');
 }
@@ -84,9 +84,22 @@ if ($view === 'dashboard') {
 elseif ($view === 'calls') {
 	$history = $portal->call_history($history_days, $history_status, $history_direction, $history_search);
 }
+elseif ($view === 'ratings') {
+	$since_ratings = $now->modify('-30 days');
+	$rating_summary = $portal->rating_summary($since_ratings);
+	$rating_distribution = $portal->rating_distribution($since_ratings);
+	$rating_by_extension = $portal->rating_by_extension($since_ratings);
+	$rating_history = $portal->rating_history(30, $history_search);
+	// Taxa de resposta: quantos avaliaram, de quantos foram atendidos. Sem
+	// consulta nova -- `call_count` ja existe e ja respeita o escopo.
+	$answered_calls = $portal->call_count($since_ratings) - $portal->call_count($since_ratings, true);
+	$rating_rate = $answered_calls > 0
+		? (int) round(((int) $rating_summary['respostas'] / $answered_calls) * 100)
+		: null;
+}
 
 $call_routes = $view === 'dashboard' ? $portal->call_routes() : [];
-$page_titles = ['dashboard' => 'Visão geral', 'calls' => 'Ligações', 'extensions' => 'Ramais'];
+$page_titles = ['dashboard' => 'Visão geral', 'calls' => 'Ligações', 'extensions' => 'Ramais', 'ratings' => 'Avaliações'];
 $current_title = $page_titles[$view];
 $username = (string) ($_SESSION['username'] ?? 'Usuário');
 $logo_url = '/themes/simplificaja/images/logo_thumbnail.svg';
@@ -151,6 +164,7 @@ $display_time = static function ($value) use ($timezone): string {
 		<a class="sj-nav-button <?= $view === 'dashboard' ? 'active' : '' ?>" data-view="dashboard" href="?view=dashboard" title="Visão geral" <?= $view === 'dashboard' ? 'data-secao-ativa="true" aria-current="page"' : '' ?>><i class="fas fa-house"></i><span class="sj-nav-label">Visão geral</span></a>
 		<a class="sj-nav-button <?= $view === 'calls' ? 'active' : '' ?>" data-view="calls" href="?view=calls" title="Ligações" <?= $view === 'calls' ? 'data-secao-ativa="true" aria-current="page"' : '' ?>><i class="fas fa-phone-volume"></i><span class="sj-nav-label">Ligações</span></a>
 		<a class="sj-nav-button <?= $view === 'extensions' ? 'active' : '' ?>" data-view="extensions" href="?view=extensions" title="Ramais" <?= $view === 'extensions' ? 'data-secao-ativa="true" aria-current="page"' : '' ?>><i class="fas fa-headset"></i><span class="sj-nav-label">Ramais</span></a>
+		<a class="sj-nav-button <?= $view === 'ratings' ? 'active' : '' ?>" data-view="ratings" href="?view=ratings" title="Avaliações" <?= $view === 'ratings' ? 'data-secao-ativa="true" aria-current="page"' : '' ?>><i class="fas fa-star"></i><span class="sj-nav-label">Avaliações</span></a>
 	</aside>
 	<main class="sj-main">
 		<header class="sj-header">
@@ -243,6 +257,41 @@ $display_time = static function ($value) use ($timezone): string {
 				<div class="sj-empty" id="extensionEmpty" hidden>Nenhum ramal corresponde ao filtro.</div>
 				<?php if ($registered_extensions === null && !empty($extensions)): ?><div class="sj-note">O estado de registro não foi retornado pelo servidor SIP; os estados aparecerão quando a consulta SIP estiver disponível.</div><?php endif; ?>
 
+			<?php elseif ($view === 'ratings'): ?>
+				<div class="sj-action"><span class="sj-title">Avaliações</span></div>
+				<div class="sj-toolbar"><span class="sj-muted">Nota que o cliente digitou no fim da ligação · últimos 30 dias</span><span class="sj-muted"><?= (int) $rating_summary['respostas'] ?> respostas</span></div>
+				<div class="sj-grid">
+					<section class="sj-card">
+						<div class="sj-card-head"><span>Nota média</span><i class="fas fa-star"></i></div>
+						<div class="sj-stats"><div class="sj-stat green"><strong><?= $rating_summary['media'] === null ? '—' : $e(number_format((float) $rating_summary['media'], 2, ',', '')) ?></strong><span>de 5</span></div><div class="sj-stat purple"><strong><?= $rating_rate === null ? '—' : $rating_rate.'%' ?></strong><span>responderam</span></div></div>
+						<div class="sj-ext-note">Ligação atendida em que o cliente não digitou nada não entra na média.</div>
+					</section>
+					<section class="sj-card">
+						<div class="sj-card-head"><span>Distribuição</span><i class="fas fa-chart-simple"></i></div>
+						<?php if (empty($rating_distribution)): ?><div class="sj-ext-note">Nenhuma avaliação no período.</div><?php else: $maior_nota = max(array_map('intval', array_column($rating_distribution, 'total'))); ?>
+						<?php foreach ($rating_distribution as $faixa): ?>
+						<div class="sj-ext-note">Nota <?= (int) $faixa['nota'] ?> · <?= (int) $faixa['total'] ?></div>
+						<div class="sj-ext-bar"><span style="width:<?= $maior_nota > 0 ? round(((int) $faixa['total'] / $maior_nota) * 100) : 0 ?>%"></span></div>
+						<?php endforeach; endif; ?>
+					</section>
+					<section class="sj-card wide">
+						<div class="sj-card-head"><span>Por atendente</span><span style="font-weight:400;color:#737a80">menor nota primeiro</span></div>
+						<?php if (empty($rating_by_extension)): ?><div class="sj-ext-note">Nenhuma avaliação no período.</div><?php endif; ?>
+						<?php foreach ($rating_by_extension as $linha): ?>
+						<div class="sj-missed"><strong>Ramal <?= $e((string) $linha['ramal']) ?></strong><span><?= (int) $linha['respostas'] ?> resposta(s)</span><span class="sj-badge <?= (float) $linha['media'] >= 4 ? 'answered' : ((float) $linha['media'] < 3 ? 'missed' : '') ?>"><?= $e(number_format((float) $linha['media'], 2, ',', '')) ?></span></div>
+						<?php endforeach; ?>
+					</section>
+				</div>
+				<form class="sj-table-tools" method="get">
+					<input type="hidden" name="view" value="ratings">
+					<label class="sj-search"><i class="fas fa-magnifying-glass"></i><input type="search" name="search" value="<?= $e($history_search) ?>" placeholder="Buscar número ou ramal" aria-label="Buscar número ou ramal"></label>
+				</form>
+				<div class="sj-table-wrap"><table class="sj-table"><thead><tr><th>Data e hora</th><th>Número</th><th>Ramal</th><th>Fila</th><th>Nota</th></tr></thead><tbody>
+				<?php foreach ($rating_history as $avaliacao): $nota = (int) $avaliacao['nota']; ?>
+				<tr><td><?= $e($display_time($avaliacao['criado_em'])) ?></td><td><strong><?= $e((string) ($avaliacao['telefone'] ?: 'Número indisponível')) ?></strong></td><td><?= $e((string) ($avaliacao['ramal'] ?: '—')) ?></td><td><?= $e((string) ($avaliacao['fila'] ?: '—')) ?></td><td><span class="sj-badge <?= $nota >= 4 ? 'answered' : ($nota < 3 ? 'missed' : '') ?>"><?= $nota ?></span></td></tr>
+				<?php endforeach; if (empty($rating_history)): ?><tr><td colspan="5" style="text-align:center;color:#737a80">Nenhuma avaliação ainda. A pesquisa só toca quando o atendente encerra a ligação.</td></tr><?php endif; ?>
+				</tbody></table></div>
+				<div class="sj-table-footer"><span><?= count($rating_history) ?> avaliação(ões) · últimos 30 dias</span><span>Exibindo até 200 registros</span></div>
 			<?php else: ?>
 				<div class="sj-action"><span class="sj-title">Ligações</span></div>
 				<div class="sj-toolbar"><span class="sj-muted">Consulte chamadas recebidas, realizadas e perdidas.</span><form method="get"><input type="hidden" name="view" value="calls"><select class="sj-select" name="days" onchange="this.form.submit()"><option value="1" <?= $history_days === 1 ? 'selected' : '' ?>>Últimas 24 horas</option><option value="7" <?= $history_days === 7 ? 'selected' : '' ?>>Últimos 7 dias</option><option value="30" <?= $history_days === 30 ? 'selected' : '' ?>>Últimos 30 dias</option></select><input type="hidden" name="status" value="<?= $e($history_status) ?>"><input type="hidden" name="direction" value="<?= $e($history_direction) ?>"><input type="hidden" name="search" value="<?= $e($history_search) ?>"></form></div>
