@@ -163,6 +163,7 @@ create table if not exists v_simplificaja_pesquisas (
     call_uuid      uuid        not null unique,
     nota           smallint    not null check (nota between 1 and 5),
     ramal          text,
+    extension_uuid uuid,
     fila           text,
     telefone       text,
     criado_em      timestamptz not null default now()
@@ -302,6 +303,23 @@ clientes existentes ficam inalterados.
 memória que atualizar o banco não alcança), então o campo entra no caminho que
 já existe, sem mecanismo novo.
 
+### Convivência com o estouro
+
+A fila já pode ter um destino de estouro (`$dados['estouro']`,
+`api_fila.php:387`), que emite um `transfer` **depois** do `callcenter`. Os dois
+não colidem, porque atendem caminhos diferentes:
+
+- **Ninguém atendeu:** não houve bridge, então
+  `audio_bridge_on_exchange_media` nunca roda e o `transfer_after_bridge` não
+  dispara. O `callcenter` devolve o canal e a linha do estouro executa. É o
+  comportamento de hoje, intacto.
+- **Atenderam e o atendente desligou:** o `transfer_after_bridge` leva o canal
+  para a pesquisa antes de a execução voltar ao plano, então a linha do estouro
+  não é alcançada. Correto — estouro é para quem não foi atendido.
+
+Fila com estouro **e** pesquisa é portanto uma combinação válida, e a validação
+de aceite cobre as duas pernas.
+
 ## O script que grava
 
 `scripts/simplificaja_pesquisa.lua`, instalado em
@@ -328,9 +346,19 @@ O script lê do canal e grava uma linha:
 | `call_uuid` | `uuid` |
 | `domain_uuid` | `domain_uuid` (o plano de entrada já seta) |
 | `nota` | `nota`, a variável do `play_and_get_digits` |
-| `ramal` | `cc_agent` |
+| `ramal` | `cc_agent`, só a parte antes do `@` |
+| `extension_uuid` | consulta em `v_extensions` pelo número do ramal |
 | `fila` | `cc_queue` |
 | `telefone` | `caller_id_number` |
+
+`extension_uuid` não é redundante com `ramal`. O portal filtra o que o perfil
+`user` pode ver com `extension_scope_sql('<coluna>', ...)`
+(`portal_data.php:31`), e esse helper compara `extension_uuid` — é assim que
+todas as consultas do portal já funcionam. Sem a coluna, a aba Avaliações
+precisaria de um mecanismo de escopo próprio, paralelo ao que existe, e seria o
+único lugar do portal com regra de visibilidade diferente. Fica nula quando o
+ramal não resolve (atendente apagado depois da ligação), e nesse caso a nota
+aparece só para quem tem visão de domínio.
 
 Regras:
 
