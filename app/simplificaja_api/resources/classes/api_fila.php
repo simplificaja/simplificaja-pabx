@@ -366,6 +366,25 @@ class api_fila {
 		$xml .= '		<action application="set" data="call_center_queue_uuid=' . xml::sanitize($fila_uuid) . '"/>' . "\n";
 		$xml .= '		<action application="set" data="queue_extension=' . xml::sanitize($ramal) . '"/>' . "\n";
 		$xml .= '		<action application="set" data="hangup_after_bridge=true"/>' . "\n";
+		// Pesquisa de avaliação: ao fim do bridge -- quando o atendente desliga
+		// -- o FreeSWITCH leva quem ligou para a pesquisa em vez de derrubar.
+		//
+		// Transferência entre ramais NÃO dispara: o canal carrega `CF_TRANSFER` e
+		// o bloco pós-bridge inteiro é pulado (`switch_ivr_bridge.c:969`). Sem
+		// atendimento também não dispara, porque não houve bridge.
+		//
+		// A SINTAXE USA DOIS-PONTOS, não espaço como a aplicação `transfer`:
+		// `switch_ivr_bridge.c:961` separa com ':'. Com espaço o log diz
+		// "No extension specified" e a ligação cai.
+		//
+		// O `hangup_after_bridge=true` acima continua e não muda: no código os
+		// dois são `else if`, e o ramo do `transfer_after_bridge` vem antes
+		// (`switch_ivr_bridge.c:1929`). Fila sem pesquisa gera o XML de sempre.
+		$pesquisa = trim((string) ($dados['pesquisa'] ?? ''));
+		if ($pesquisa !== '') {
+			$xml .= '		<action application="set" data="transfer_after_bridge='
+				. xml::sanitize($pesquisa) . ':XML:' . $dominio . '"/>' . "\n";
+		}
 		// `hold_music` e variavel GLOBAL no FusionPBX, apontando para
 		// `local_stream://default`. Num produto multi-tenant isso e duplamente
 		// errado: nesta instalacao o stream nem existe (a espera virava silencio)
