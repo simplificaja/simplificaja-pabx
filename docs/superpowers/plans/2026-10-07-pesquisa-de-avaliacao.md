@@ -756,14 +756,16 @@ Salvar a fila de novo, agora **sem** o campo `pesquisa`, e comparar com o
 guardado no passo 1:
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 root@109.123.250.200 \
-  "su - postgres -c \"psql -At -d fusionpbx -c \\\"select dialplan_xml from v_dialplans where dialplan_name = 'Atendimento' and domain_uuid = (select domain_uuid from v_domains where domain_name = 'demo.pabx.simplificaja.com.br')\\\"\"" \
-  > /tmp/fila-depois.xml
-diff /tmp/fila-antes.xml /tmp/fila-depois.xml && echo "IDENTICO: nada que funciona mudou"
+# `editar` faz remover+criar, entao o plano de discagem e a fila nascem com UUID
+# novo a cada salvamento. Isso ja era assim antes desta mudanca, e por isso o
+# diff byte a byte SEMPRE acusa diferenca. Normalizar os UUIDs e o teste certo.
+norm() { sed -E 's/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/<UUID>/g' "$1"; }
+diff -u <(norm /tmp/fila-antes.xml) <(norm /tmp/fila-depois.xml) \
+  && echo "IDENTICO: nada que funciona mudou"
 ```
 
-Esperado: sem diferença. Se houver, **parar** — a mudança não é aditiva como
-deveria.
+Esperado: sem diferença depois de normalizar. Se houver diferença que não seja
+UUID, **parar** — a mudança não é aditiva como deveria.
 
 - [ ] **Passo 7: Religar a pesquisa na fila**
 
@@ -853,6 +855,27 @@ Em `app/simplificaja_portal/index.php:21`, incluir `'ratings'` na lista branca:
 ```php
 if (!in_array($view, ['dashboard', 'calls', 'extensions', 'ratings'], true)) {
 ```
+
+E na mesma passada, **três coisas que quebram se faltarem**:
+
+A permissão, que hoje cobre só `calls`:
+
+```php
+if (in_array($view, ['calls', 'ratings'], true) && !permission_exists('xml_cdr_view')) {
+```
+
+O título da página. Sem a entrada nova, `$page_titles[$view]` não existe e o
+cabeçalho quebra:
+
+```php
+$page_titles = ['dashboard' => 'Visão geral', 'calls' => 'Ligações', 'extensions' => 'Ramais', 'ratings' => 'Avaliações'];
+```
+
+E a posição na cadeia de views do template: ela é
+`if dashboard / elseif extensions / else (ligações)`. A aba de Ligações é o
+**caso padrão**, então o bloco novo entra como `elseif` **antes** daquele
+`else`. `elseif` depois de `else` não compila -- o PHP recusa com
+"unexpected token elseif".
 
 - [ ] **Passo 3: Adicionar o botão no menu lateral**
 
