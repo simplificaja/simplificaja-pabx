@@ -17,6 +17,8 @@
 	require __DIR__ . "/resources/classes/api_dominio.php";
 	require __DIR__ . "/resources/classes/api_ura.php";
 	require __DIR__ . "/resources/classes/api_anuncio.php";
+	// Depois do anúncio: usa a constante do silêncio que mora lá.
+	require __DIR__ . "/resources/classes/api_pesquisa.php";
 	require __DIR__ . "/resources/classes/api_horario.php";
 	require __DIR__ . "/resources/classes/api_gravacao.php";
 	require __DIR__ . "/resources/classes/api_grupo.php";
@@ -142,6 +144,22 @@
 			$n = trim((string) (corpo()['numero'] ?? ''));
 			if ($n === '') { responde(['erro' => 'numero é obrigatório'], 422); }
 			responde(api_anuncio::remover($domain_uuid, $n));
+
+		// Pesquisa de avaliacao: a fila a alcanca por `transfer_after_bridge`,
+		// quando o atendente desliga. Nao e destino que alguem disca.
+		case 'GET pesquisas':
+			responde(['pesquisas' => api_pesquisa::listar($domain_uuid)]);
+
+		case 'POST pesquisas':
+			responde(api_pesquisa::criar($domain_uuid, corpo()));
+
+		case 'POST pesquisa-editar':
+			responde(api_pesquisa::editar($domain_uuid, corpo()));
+
+		case 'DELETE pesquisas':
+			$n = trim((string) (corpo()['numero'] ?? ''));
+			if ($n === '') { responde(['erro' => 'numero é obrigatório'], 422); }
+			responde(api_pesquisa::remover($domain_uuid, $n));
 
 		case 'GET uras':
 			responde(api_leitura::uras($domain_uuid));
