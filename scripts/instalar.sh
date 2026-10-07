@@ -90,6 +90,14 @@ echo "   Falta registrar no plano de discagem GLOBAL (contexto 'global',"
 echo "   depois do call-direction, com continue ligado):"
 echo "     set  api_hangup_hook=lua chatwoot_hangup.lua"
 
+# O script da pesquisa é cópia direta, sem placeholder para substituir --
+# diferente do gancho, que leva URL e segredo por sed. Quem o chama é o plano de
+# discagem da pesquisa, por domínio, e não o plano global.
+PESQUISA=/usr/share/freeswitch/scripts/simplificaja_pesquisa.lua
+cp "$REPO/scripts/simplificaja_pesquisa.lua" "$PESQUISA"
+chmod 644 "$PESQUISA"
+ok "instalado em $PESQUISA"
+
 # -------------------------------------------------------------- 6. os audios
 etapa "6. Áudios da URA"
 if [ -f "/var/lib/freeswitch/recordings/$DOMINIO/ura-completa.wav" ]; then
