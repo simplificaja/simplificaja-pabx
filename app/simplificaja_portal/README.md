@@ -21,6 +21,23 @@ menu para o grupo `user` e remove desse grupo os atalhos antigos de dashboard,
 CDR detalhado, desvios, caixa postal, salas, bloqueios, códigos, perfil e saída.
 Os menus e permissões dos outros grupos não são alterados.
 
+## Ao criar um usuário novo
+
+O destino de login é gravado **por usuário** em `v_user_settings`, e o
+`configurar-portal.sql` insere para quem estava no grupo `user` **no momento em
+que ele rodou**. Usuário criado depois cai na tela padrão do FusionPBX em vez da
+visão geral -- aconteceu em 08/10/2026.
+
+Não há configuração por grupo nesta versão (só existem `v_default_settings`,
+global, e `v_domain_settings`, por domínio), então a regra é:
+
+```
+criar o usuário  →  rodar configurar-portal.sql de novo
+```
+
+O script é idempotente: apaga pela descrição e reinsere para todos os usuários
+do grupo `user` que existirem naquele instante.
+
 As alterações de menu são idempotentes. As páginas exigem autenticação e a
 permissão existente `xml_cdr_view`, concedida ao grupo `user` nesta instalação.
 O script também define a visão geral como destino de login para os usuários
