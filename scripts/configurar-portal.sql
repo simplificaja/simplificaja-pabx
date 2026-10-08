@@ -67,6 +67,54 @@ values
 
 -- Após o login, usuários do grupo user entram na nova visão geral. É uma
 -- preferência por usuário; administradores continuam no destino padrão.
+-- ---------------------------------------------------------------------------
+-- Papel `gestor`: vê o portal inteiro do tenant, não só os próprios ramais.
+--
+-- O grupo `user` tem `xml_cdr_view` mas não `xml_cdr_domain`, então o portal
+-- filtra tudo pelos ramais associados ao usuário -- e o dono da empresa, que
+-- precisa ver a nota de TODOS os atendentes, não via nenhuma.
+--
+-- Não dá para resolver soltando `xml_cdr_domain` no grupo `user`: isso faria
+-- todo atendente ver as ligações e as notas dos colegas.
+--
+-- `gestor` é o grupo `user` mais as três permissões de domínio. Clonado em vez
+-- de escolhido a dedo porque entre as 104 permissões do `user` estão as de
+-- login e perfil, e adivinhar quais importam é como se cria tela que abre em
+-- branco.
+-- ---------------------------------------------------------------------------
+
+insert into v_groups (group_uuid, group_name, group_level, group_protected, group_description, insert_date)
+select 'd24e33c8-0b88-4aaf-9c3c-5d996b641100', 'gestor', 35, 'false',
+       'SimplificaJá: dono da empresa — vê o portal inteiro do próprio tenant', now()
+ where not exists (select 1 from v_groups where group_name = 'gestor' and domain_uuid is null);
+
+-- Idempotente por apagar e reinserir, igual aos menus acima.
+delete from v_group_permissions where group_name = 'gestor';
+
+insert into v_group_permissions (group_permission_uuid, permission_name, permission_assigned, group_name, group_uuid, insert_date)
+select gen_random_uuid(), p.permission_name, 'true', 'gestor', g.group_uuid, now()
+  from v_group_permissions p
+ cross join (select group_uuid from v_groups where group_name = 'gestor' and domain_uuid is null) g
+ where p.group_name = 'user' and p.permission_assigned = 'true';
+
+-- O que o `user` não tem e o gestor precisa: ver o domínio inteiro em vez de só
+-- os próprios ramais. São exatamente as três que o portal consulta.
+insert into v_group_permissions (group_permission_uuid, permission_name, permission_assigned, group_name, group_uuid, insert_date)
+select gen_random_uuid(), x.nome, 'true', 'gestor', g.group_uuid, now()
+  from (values ('xml_cdr_domain'), ('registration_domain'), ('call_active_domain')) as x(nome)
+ cross join (select group_uuid from v_groups where group_name = 'gestor' and domain_uuid is null) g
+ where not exists (select 1 from v_group_permissions
+                    where group_name = 'gestor' and permission_name = x.nome);
+
+-- O mesmo menu de quatro itens do grupo `user`.
+delete from v_menu_item_groups where group_name = 'gestor';
+
+insert into v_menu_item_groups (menu_item_group_uuid, menu_uuid, menu_item_uuid, group_name, group_uuid, insert_date)
+select gen_random_uuid(), 'b4750c3f-2a86-b00d-b7d0-345c14eca286', m.item::uuid, 'gestor', g.group_uuid, now()
+  from (values ('d24e33c8-0b88-4aaf-9c3c-5d996b641011'),('d24e33c8-0b88-4aaf-9c3c-5d996b641012'),
+               ('d24e33c8-0b88-4aaf-9c3c-5d996b641013'),('d24e33c8-0b88-4aaf-9c3c-5d996b641014')) as m(item)
+ cross join (select group_uuid from v_groups where group_name = 'gestor' and domain_uuid is null) g;
+
 delete from v_user_settings
 where user_setting_description = 'SimplificaJá: abrir visão geral do PABX após login';
 
@@ -79,7 +127,7 @@ select gen_random_uuid(), ug.user_uuid, ug.domain_uuid, 'login', 'destination',
        'text', '/app/simplificaja_portal/index.php?view=dashboard', 1, true,
        'SimplificaJá: abrir visão geral do PABX após login', now()
 from v_user_groups ug
-where ug.group_name = 'user'
+where ug.group_name in ('user', 'gestor')
   and exists (
     select 1 from v_group_permissions gp
     where gp.group_uuid = ug.group_uuid

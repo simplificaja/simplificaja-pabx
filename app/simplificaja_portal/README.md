@@ -21,6 +21,28 @@ menu para o grupo `user` e remove desse grupo os atalhos antigos de dashboard,
 CDR detalhado, desvios, caixa postal, salas, bloqueios, códigos, perfil e saída.
 Os menus e permissões dos outros grupos não são alterados.
 
+## Os dois papéis
+
+| Grupo | Vê | Para quem |
+|---|---|---|
+| `user` | só os ramais associados ao próprio usuário | atendente |
+| `gestor` | o domínio inteiro | dono da empresa |
+
+O grupo `user` tem `xml_cdr_view` mas não `xml_cdr_domain`, então o portal
+filtra tudo pelos ramais do usuário. Para o dono, que precisa ver a nota de
+**todos** os atendentes, isso mostrava nada.
+
+Não dá para resolver soltando `xml_cdr_domain` no grupo `user`: faria todo
+atendente ver as ligações e as notas dos colegas.
+
+`gestor` é o `user` clonado mais `xml_cdr_domain`, `registration_domain` e
+`call_active_domain` -- exatamente as três que o portal consulta. Clonado em vez
+de escolhido a dedo porque entre as 104 permissões do `user` estão as de login e
+perfil.
+
+Conferido em 08/10/2026 com duas sessões reais e uma nota de um ramal não
+vinculado: o `user` via 2 respostas, o `gestor` via 3.
+
 ## Ao criar um usuário novo
 
 O destino de login é gravado **por usuário** em `v_user_settings`, e o
