@@ -182,17 +182,9 @@ $display_time = static function ($value) use ($timezone): string {
 	.sj-stat strong,.sj-ext-stat strong,.sj-table td,.sj-chart-y,.sj-badge,
 	.sj-faixa .v,.sj-dist b,.sj-med{font-variant-numeric:tabular-nums}
 
-	/* --- lateral aberta no desktop: so icone nao diz o que e cada coisa --- */
-	@media(min-width:901px){
-		.sj-side{flex:0 0 200px;width:200px}
-		.sj-nav-button{width:200px}
-		.sj-nav-label{width:138px;opacity:1;transform:none}
-		.sj-brand{height:56px;justify-content:flex-start;padding:0 18px;
-		          border-bottom:1px solid #313741}
-		.sj-brand:after{content:"SimplificaJá";margin-left:9px;color:#fff;
-		                font-size:13px;font-weight:600;letter-spacing:.2px}
-		.sj-brand img{width:21px;height:21px}
-	}
+	/* A lateral fica RECOLHIDA por padrao -- preferencia do Isaac, 08/10/2026.
+	   Eu a tinha deixado aberta achando que so icone nao diz o que e cada coisa;
+	   o botao de menu continua expandindo, e cada item ja tem `title`. */
 
 	/* --- faixa de numeros: quatro cartoes altos viram uma linha de leitura --- */
 	.sj-faixa{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
