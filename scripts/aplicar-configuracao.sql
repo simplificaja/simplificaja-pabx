@@ -38,7 +38,36 @@ where ac.access_control_name = 'providers'
     select 1 from v_access_control_nodes n where n.node_cidr = f.cidr
   );
 
-\echo '== 3. Fila sem anuncio nao derruba mais o FreeSWITCH =='
+\echo '== 3. RTCP no perfil externo: ver a perda que a operadora reporta =='
+-- Sem RTCP no perfil que fala com a operadora, nos ficamos CEGOS na direcao que
+-- importa: da para medir o audio que CHEGA (rtp_audio_in_mos deu 4,50), e nao o
+-- que a operadora recebe de nos. Quando o Isaac relatou picote, a medicao
+-- provou que a nossa saida e limpa -- 10.631 pacotes, 3 buracos acima de 40ms --
+-- mas nao havia como ver quanto se perdia no caminho.
+--
+-- Com RTCP ligado, a operadora manda relatorio de recepcao e os contadores
+-- rtp_audio_out_* passam a ter numero. Mesmo intervalo que o perfil interno ja
+-- usa, 5 segundos.
+--
+-- Risco conhecido: isto acrescenta atributos de RTCP no SDP. Operadora
+-- implicante pode recusar -- se a entrada parar depois disto, e o primeiro
+-- suspeito, e desfazer e pôr sip_profile_setting_enabled em false.
+
+insert into v_sip_profile_settings
+  (sip_profile_setting_uuid, sip_profile_uuid, sip_profile_setting_name,
+   sip_profile_setting_value, sip_profile_setting_enabled,
+   sip_profile_setting_description)
+select gen_random_uuid(), p.sip_profile_uuid, 'rtcp-audio-interval-msec', '5000', true,
+       'Relatorio de recepcao da operadora: sem isto nao da para medir a perda de saida'
+from v_sip_profiles p
+where p.sip_profile_name = 'external'
+  and not exists (
+    select 1 from v_sip_profile_settings s
+    where s.sip_profile_uuid = p.sip_profile_uuid
+      and s.sip_profile_setting_name = 'rtcp-audio-interval-msec'
+  );
+
+\echo '== 4. Fila sem anuncio nao derruba mais o FreeSWITCH =='
 -- O mod_callcenter deste build chama, no instante em que o atendente atende,
 -- `switch_ivr_stop_displace_session(sessao, queue->announce)` sem checar nulo
 -- -- e essa funcao usa o ponteiro direto como chave de hashtable. Ponteiro
@@ -91,7 +120,7 @@ update v_call_center_queues
 set queue_announce_sound = queue_announce_sound
 where coalesce(queue_announce_sound, '') = '';
 
-\echo '== 4. Conferencia =='
+\echo '== 5. Conferencia =='
 select p.sip_profile_name, s.sip_profile_setting_name, s.sip_profile_setting_value
 from v_sip_profiles p
 join v_sip_profile_settings s on s.sip_profile_uuid = p.sip_profile_uuid
