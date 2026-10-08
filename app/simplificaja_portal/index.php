@@ -286,10 +286,13 @@ $display_time = static function ($value) use ($timezone): string {
 					<div class="cel">
 						<div class="k">Ramais</div>
 						<?php if ($registered_count === null): ?>
-							<?php /* Antes saiam dois travessoes coloridos aqui, certos no codigo
-							      e com cara de tela quebrada. */ ?>
-							<div class="v vazio">estado indisponível</div>
-							<div class="c"><?= $total_extensions ?> <?= $total_extensions == 1 ? 'ramal visível' : 'ramais visíveis' ?> para você</div>
+							<?php /* So entra aqui quando o Event Socket nao respondeu. Zero
+							      ramal conectado e uma resposta, e cai no `else`. */ ?>
+							<div class="v vazio">não foi possível consultar</div>
+							<div class="c"><?= $total_extensions ?> <?= $total_extensions == 1 ? 'ramal cadastrado' : 'ramais cadastrados' ?></div>
+						<?php elseif ($registered_count === 0): ?>
+							<div class="v idle">0<span style="color:#9aa1a8;font-size:15px;font-weight:500"> / <?= $total_extensions ?></span></div>
+							<div class="c">nenhum telefone conectado agora</div>
 						<?php else: ?>
 							<div class="v <?= $registered_count > 0 ? 'ok' : 'idle' ?>"><?= $registered_count ?><span style="color:#9aa1a8;font-size:15px;font-weight:500"> / <?= $total_extensions ?></span></div>
 							<div class="c"><?= $registered_count == 1 ? 'ramal online' : 'ramais online' ?></div>
@@ -307,12 +310,12 @@ $display_time = static function ($value) use ($timezone): string {
 						<div class="sj-vazio">Nenhuma ligação perdida no período.
 							<a class="sj-link" href="?view=calls&amp;status=missed&amp;days=1" style="margin-left:6px">Ver histórico</a></div>
 					<?php else: ?>
-						<div class="sj-missed-list" style="padding:4px 16px 12px">
+						<div class="sj-missed-list" style="padding:0 16px">
 						<?php foreach ($recent_missed_calls as $call): ?>
 						<div class="sj-missed"><strong><?= $e($call['caller_id_number'] ?: $call['caller_id_name'] ?: 'Número indisponível') ?></strong><span>Ligou para <?= $e($call['caller_destination'] ?: $call['destination_number'] ?: '—') ?></span><time><?= $e($display_time($call['start_stamp'])) ?></time><span class="sj-badge missed">Perdida</span></div>
 						<?php endforeach; ?>
-						<div style="display:flex;justify-content:flex-end;margin-top:5px"><a class="sj-link" href="?view=calls&amp;status=missed&amp;days=1">Ver histórico de ligações</a></div>
 						</div>
+						<div style="display:flex;justify-content:flex-end;padding:9px 16px;border-top:1px solid var(--sj-line)"><a class="sj-link" href="?view=calls&amp;status=missed&amp;days=1">Ver histórico de ligações</a></div>
 					<?php endif; ?>
 				</section>
 				<section class="sj-chart-card">
@@ -333,13 +336,35 @@ $display_time = static function ($value) use ($timezone): string {
 					</div>
 					<div class="sj-chart-labels"><span>24h atrás</span><span>18h</span><span>12h</span><span>6h</span><span>Agora</span></div>
 				</section>
-				<section class="sj-flow-card">
-					<div class="sj-flow-head"><span>Roteamento de chamadas</span><span class="sj-muted">destinos de entrada configurados</span></div>
-					<?php if (empty($call_routes)): ?><div class="sj-note">Nenhum destino de entrada habilitado neste domínio.</div><?php endif; ?>
-					<?php foreach ($call_routes as $route): ?>
-					<div class="sj-flow-row"><div class="sj-flow-node"><small>Número de entrada</small><strong><?= $e($route['destination_number'] ?: 'Padrão configurado') ?></strong></div><i class="sj-flow-arrow fas fa-chevron-right"></i><div class="sj-flow-node"><small>Encaminha para</small><strong><?= $e($route['target_label']) ?></strong></div></div>
-					<?php endforeach; ?>
-					<div class="sj-note">Cada linha mostra uma rota de entrada configurada para esta empresa.</div>
+				<section class="sj-chart-card">
+					<div class="sj-card-head"><span>Para onde vão as ligações</span><span class="sj-muted"><?= count($call_routes) ?> <?= count($call_routes) == 1 ? 'número de entrada' : 'números de entrada' ?></span></div>
+					<?php if (empty($call_routes)): ?>
+						<div class="sj-vazio">Nenhum número de entrada habilitado nesta empresa.</div>
+					<?php else: ?>
+					<div class="sj-table-wrap" style="border:0;border-radius:0"><table class="sj-table" style="min-width:0">
+						<thead><tr><th style="width:220px">Quem liga disca</th><th>Caminho da ligação</th></tr></thead>
+						<tbody>
+						<?php foreach ($call_routes as $route): ?>
+						<tr>
+							<td>
+								<strong><?= $e((string) $route['numero_amigavel']) ?></strong>
+								<?php if (!empty($route['entregue_por'])): ?>
+									<span style="display:block;color:#858c91;font-size:11px">a operadora entrega por <?= $e((string) $route['entregue_por']) ?></span>
+								<?php endif; ?>
+							</td>
+							<td>
+								<?php if (empty($route['caminho'])): ?>
+									<span style="color:#8a5a12">este número ainda não leva a lugar nenhum</span>
+								<?php else: ?>
+									<?php foreach ($route['caminho'] as $i => $parada): ?>
+										<?php if ($i > 0): ?><span style="color:#a9a2c9;padding:0 4px">→</span><?php endif; ?><?= $e((string) $parada) ?>
+									<?php endforeach; ?>
+								<?php endif; ?>
+							</td>
+						</tr>
+						<?php endforeach; ?>
+						</tbody></table></div>
+					<?php endif; ?>
 				</section>
 
 			<?php elseif ($view === 'extensions'): ?>

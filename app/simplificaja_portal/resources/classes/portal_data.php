@@ -55,30 +55,39 @@ class simplificaja_portal_data {
 		return is_array($rows) ? $rows : [];
 	}
 
+	/**
+	 * Ramais registrados agora, ou null quando nao foi possivel perguntar.
+	 *
+	 * Nao usa a classe `registrations` do FusionPBX: ela devolve null tanto
+	 * quando o Event Socket nao conecta quanto quando simplesmente nao ha
+	 * ninguem registrado. O portal nao conseguia distinguir "nenhum ramal
+	 * conectado" de "nao consegui perguntar", e dizia a segunda coisa nos dois
+	 * casos -- que e o que confundia quem olhava a tela.
+	 *
+	 * `show registrations as json` responde `{"row_count":0}` quando nao ha
+	 * ninguem, e isso e uma resposta, nao uma falha.
+	 */
 	public function registrations(): ?array {
 		$active = [];
 		try {
-			$registrations = new registrations([
-				'database' => $this->database,
-				'domain_uuid' => $this->domain_uuid,
-				'domain_name' => $this->domain_name,
-			]);
-			$rows = $registrations->get('all');
-			if (!is_array($rows)) {
+			$socket = event_socket::create();
+			if (!$socket || !$socket->is_connected()) {
 				return null;
 			}
-			foreach ($rows as $row) {
-				$user = (string) ($row['user'] ?? '');
-				[$number, $user_domain] = array_pad(explode('@', $user, 2), 2, '');
-				if (($row['sip-auth-realm'] ?? '') !== $this->domain_name && $user_domain !== $this->domain_name) {
+			$resposta = event_socket::api('show registrations as json');
+			$dados = json_decode(trim((string) $resposta), true);
+			if (!is_array($dados)) {
+				return null;
+			}
+			foreach (($dados['rows'] ?? []) as $linha) {
+				$usuario = (string) ($linha['reg_user'] ?? '');
+				$realm = (string) ($linha['realm'] ?? '');
+				if ($usuario === '' || $realm !== $this->domain_name) {
 					continue;
 				}
-				if ($number !== '') {
-					$active[$number] = true;
-				}
+				$active[$usuario] = true;
 			}
-		} catch (Throwable $exception) {
-			// A switch connection problem should not take down the portal.
+		} catch (Throwable $e) {
 			return null;
 		}
 		return $active;
@@ -198,8 +207,20 @@ class simplificaja_portal_data {
 		return is_array($rows) ? $rows : [];
 	}
 
+	/**
+	 * Rotas de entrada, com o caminho que a ligacao faz de verdade.
+	 *
+	 * Lia `destination_app` e `destination_data` do FusionPBX, que no nosso
+	 * setup estao VAZIOS: quem roteia e o plano de discagem que a nossa API
+	 * gera (`entrada-75681` transfere para 8000, que transfere para 9100).
+	 * Por isso toda rota aparecia como "Destino configurado".
+	 *
+	 * O numero que a pessoa reconhece tambem nao estava na tela: ele mora na
+	 * descricao do destino -- "(19) 2570-0191 — operadora entrega por 75681" --
+	 * e so o 75681 era exibido.
+	 */
 	public function call_routes(): array {
-		$sql = "select destination_number, destination_app, destination_data ";
+		$sql = "select destination_number, destination_description ";
 		$sql .= "from v_destinations where domain_uuid = :domain_uuid and destination_enabled = true ";
 		$sql .= "order by destination_order asc, destination_number asc limit 6";
 		$rows = $this->database->select($sql, ['domain_uuid' => $this->domain_uuid], 'all');
@@ -207,41 +228,84 @@ class simplificaja_portal_data {
 			return [];
 		}
 
-		$targets = [];
-		foreach (['v_ivr_menus' => ['ivr_menu_extension', 'ivr_menu_name', 'URA'],
-			'v_ring_groups' => ['ring_group_extension', 'ring_group_name', 'Grupo']
-		] as $table => [$extension_column, $name_column, $label]) {
-			$target_rows = $this->database->select(
-				"select ".$extension_column." as extension, ".$name_column." as name from ".$table." where domain_uuid = :domain_uuid and ".($table === 'v_ivr_menus' ? 'ivr_menu_enabled' : 'ring_group_enabled')." = true",
-				['domain_uuid' => $this->domain_uuid], 'all');
-			foreach (($target_rows ?? []) as $target) {
-				$targets[(string) $target['extension']] = $label.': '.(string) $target['name'];
-			}
-		}
-		$extension_rows = $this->database->select(
-			"select extension, coalesce(nullif(directory_first_name || ' ' || directory_last_name, ' '), extension) as name from v_extensions where domain_uuid = :domain_uuid and enabled = true",
-			['domain_uuid' => $this->domain_uuid], 'all');
-		foreach (($extension_rows ?? []) as $target) {
-			$targets[(string) $target['extension']] = 'Ramal '.$target['extension'];
-		}
-
+		$nomes = $this->mapa_de_destinos();
 		foreach ($rows as &$row) {
-			$data = trim((string) ($row['destination_data'] ?? ''));
-			$first = preg_split('/\s+/', $data)[0] ?? '';
-			$row['target_label'] = $targets[$first] ?? 'Destino configurado';
+			$numero = (string) $row['destination_number'];
+			// A descricao costuma trazer o numero como o cliente o conhece. Fica
+			// antes do `—`, que e como a nossa API a monta.
+			$descricao = trim((string) ($row['destination_description'] ?? ''));
+			$amigavel = $descricao === '' ? '' : trim(explode('—', $descricao)[0]);
+			$row['numero_amigavel'] = $amigavel !== '' ? $amigavel : $numero;
+			$row['entregue_por'] = $amigavel !== '' ? $numero : '';
+			$row['caminho'] = $this->caminho_da_rota($numero, $nomes);
 		}
 		unset($row);
 		return $rows;
 	}
 
+	/** Numero -> rotulo, de tudo que pode receber uma ligacao neste dominio. */
+	private function mapa_de_destinos(): array {
+		$nomes = [];
+		$consultas = [
+			["select queue_extension as n, queue_name as nome from v_call_center_queues where domain_uuid = :domain_uuid", 'Fila'],
+			["select ivr_menu_extension as n, ivr_menu_name as nome from v_ivr_menus where domain_uuid = :domain_uuid and ivr_menu_enabled = true", 'Menu'],
+			["select ring_group_extension as n, ring_group_name as nome from v_ring_groups where domain_uuid = :domain_uuid and ring_group_enabled = true", 'Grupo'],
+			["select extension as n, extension as nome from v_extensions where domain_uuid = :domain_uuid and enabled = true", 'Ramal'],
+		];
+		foreach ($consultas as [$sql, $rotulo]) {
+			foreach (($this->database->select($sql, ['domain_uuid' => $this->domain_uuid], 'all') ?: []) as $linha) {
+				$nomes[(string) $linha['n']] = $rotulo.' '.$linha['nome'];
+			}
+		}
+		// Anuncio, horario e pesquisa sao planos de discagem que a nossa API
+		// gera; o FusionPBX nao os conhece como "destino", e era por isso que o
+		// caminho morria no primeiro salto.
+		$apps = [
+			'a6f1e4d2-7b30-4c58-9e11-8d2a5c7f3b04' => 'Anúncio',
+			'c3d8b215-6e74-4a19-9f05-2b7e41c6a83d' => 'Horário',
+			'1e9f0b45-d844-40ab-b900-aec2f465d408' => 'Pesquisa',
+		];
+		$linhas = $this->database->select(
+			"select dialplan_number, dialplan_name, app_uuid from v_dialplans "
+			."where domain_uuid = :domain_uuid and app_uuid in ('a6f1e4d2-7b30-4c58-9e11-8d2a5c7f3b04',"
+			."'c3d8b215-6e74-4a19-9f05-2b7e41c6a83d','1e9f0b45-d844-40ab-b900-aec2f465d408')",
+			['domain_uuid' => $this->domain_uuid], 'all') ?: [];
+		foreach ($linhas as $linha) {
+			$nomes[(string) $linha['dialplan_number']] = ($apps[$linha['app_uuid']] ?? 'Destino').' '.$linha['dialplan_name'];
+		}
+		return $nomes;
+	}
+
 	/**
-	 * As notas que o cliente digitou no fim da ligação.
+	 * Segue a corrente de `transfer` a partir do numero de entrada.
 	 *
-	 * O escopo segue o mesmo de todas as consultas daqui: `extension_scope_sql`
-	 * compara `extension_uuid`, e é por isso que a tabela guarda o uuid do ramal
-	 * e não só o número. Perfil `user` sem visão de domínio vê as notas dos
-	 * ramais dele; quem tem `xml_cdr_domain` vê o domínio inteiro.
+	 * Teto de saltos porque corrente em circulo existe -- anuncio apontando para
+	 * anuncio e erro de configuracao comum, e tela nao pode girar por causa dele.
 	 */
+	private function caminho_da_rota(string $numero, array $nomes): array {
+		$caminho = [];
+		$vistos = [];
+		$atual = $numero;
+		for ($i = 0; $i < 6 && $atual !== ''; $i++) {
+			$xml = $this->database->select(
+				"select dialplan_xml from v_dialplans where domain_uuid = :domain_uuid "
+				."and dialplan_number = :n order by dialplan_order limit 1",
+				['domain_uuid' => $this->domain_uuid, 'n' => $atual], 'column');
+			if (empty($xml) || !preg_match('/application="transfer" data="([^" ]+)/', (string) $xml, $m)) {
+				break;
+			}
+			$proximo = $m[1];
+			if (in_array($proximo, $vistos, true)) {
+				$caminho[] = 'volta para '.($nomes[$proximo] ?? $proximo);
+				break;
+			}
+			$vistos[] = $proximo;
+			$caminho[] = $nomes[$proximo] ?? $proximo;
+			$atual = $proximo;
+		}
+		return $caminho;
+	}
+
 	public function rating_summary(DateTimeImmutable $since): array {
 		$sql = "select count(*) as respostas, round(avg(p.nota), 2) as media ";
 		$sql .= "from v_simplificaja_pesquisas p ";
