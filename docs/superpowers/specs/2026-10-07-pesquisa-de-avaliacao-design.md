@@ -397,6 +397,45 @@ pesquisa (pelo `transfer_after_bridge`) **e** pesquisa que aponta para ela pelo
 `proxima`. Remover sem isso deixaria uma sequência transferindo para um número
 que não existe.
 
+### O agradecimento é campo, não outra pergunta
+
+Corrigido em 08/10/2026, depois de uma ligação real. O "obrigado" tinha sido
+montado como uma segunda pesquisa, e pesquisa pergunta: tocou o áudio, esperou
+nota de 1 a 5 que ninguém ia digitar, repetiu, e só desligou quando quem ligou
+desistiu. Medido no log: o áudio tocou quatro vezes em 41 segundos.
+
+Cada pesquisa ganha um campo opcional `agradecimento` -- um áudio tocado depois
+de a nota ser gravada, antes do `transfer` ou do `hangup`:
+
+```xml
+<action application="lua" data="simplificaja_pesquisa.lua"/>
+<action application="set" data="playback_terminators=none"/>
+<action application="playback" data=".../obrigado.wav"/>
+<action application="hangup" data=""/>
+```
+
+`playback_terminators=none` entra **só aqui**, depois da coleta. Antes dela
+atrapalharia o dígito que quem ligou aperta durante a pergunta.
+
+O agradecimento toca mesmo quando ninguém respondeu, porque a execução segue o
+plano de todo jeito. É aceitável -- um "obrigado pelo contato" não ofende quem
+não avaliou --, mas é comportamento escolhido, não acidente.
+
+### Os tempos saem de medição, não de escolha
+
+A pergunta gravada no teste tinha 20 segundos, e o `play_and_get_digits` repete
+o prompt INTEIRO a cada tentativa. Com 5s de espera e 3 tentativas, quem ligou
+ouvia a mesma frase três vezes, recomeçando 5 segundos depois de ela acabar --
+o que soa como repetir na hora.
+
+| Constante | Antes | Agora |
+|---|---|---|
+| `TENTATIVAS` | 3 | 2 |
+| `ESPERA_RESPOSTA` | 5000 | 10000 |
+
+Nenhuma constante compensa um áudio de 20 segundos: o jeito real de encurtar o
+ciclo é gravar a pergunta curta.
+
 ## O script que grava
 
 `scripts/simplificaja_pesquisa.lua`, instalado em

@@ -25,8 +25,21 @@ class api_pesquisa {
 	/** Depois do horário (225), antes das rotas de entrada (230). */
 	const ORDEM_NO_PLANO = '226';
 
-	const TENTATIVAS = 3;
-	const ESPERA_RESPOSTA = 5000;
+	/**
+	 * Quantas vezes a pergunta e repetida, e quanto se espera depois dela.
+	 *
+	 * Medido numa ligacao real de 08/10/2026: a pergunta gravada tinha 20
+	 * segundos, e o `play_and_get_digits` repete o prompt INTEIRO a cada
+	 * tentativa. Com 5s de espera e 3 tentativas, quem ligou ouvia a mesma
+	 * frase de 20s tres vezes, recomecando 5 segundos depois de ela acabar --
+	 * o que soa como repetir na hora.
+	 *
+	 * Duas tentativas e 10s de espera: uma repeticao para quem se distraiu, e
+	 * tempo de pensar antes dela. O jeito real de encurtar isso e gravar a
+	 * pergunta curta -- nenhuma constante aqui compensa um audio de 20s.
+	 */
+	const TENTATIVAS = 2;
+	const ESPERA_RESPOSTA = 10000;
 	const ESPERA_ENTRE_DIGITOS = 3000;
 
 	/** A escala do CsatSurveyResponse do Chatwoot, para a nota viajar sem conversão. */
@@ -75,6 +88,7 @@ class api_pesquisa {
 		foreach ($linhas as &$linha) {
 			$linha['audio'] = self::audio_do_xml($linha['dialplan_xml'] ?? null);
 			$linha['proxima'] = self::proxima_do_xml($linha['dialplan_xml'] ?? null);
+			$linha['agradecimento'] = self::agradecimento_do_xml($linha['dialplan_xml'] ?? null);
 			$linha['usada_por'] = self::quem_usa($domain_uuid, (string) $linha['dialplan_number']);
 			unset($linha['dialplan_xml']);
 		}
@@ -95,6 +109,27 @@ class api_pesquisa {
 		}
 		$partes = explode(' ', $m[1]);
 		return isset($partes[5]) ? basename($partes[5]) : null;
+	}
+
+	/**
+	 * O audio tocado DEPOIS da nota, se houver -- o "obrigado".
+	 *
+	 * E o unico `playback` que nao e `silence_stream`: o audio da pergunta vai
+	 * como argumento do `play_and_get_digits`, nao como playback proprio.
+	 */
+	private static function agradecimento_do_xml(?string $xml): ?string {
+		if ($xml === null) {
+			return null;
+		}
+		if (!preg_match_all('/application="playback" data="([^"]*)"/', $xml, $m)) {
+			return null;
+		}
+		foreach ($m[1] as $valor) {
+			if ($valor !== '' && !str_contains($valor, '_stream://')) {
+				return basename($valor);
+			}
+		}
+		return null;
 	}
 
 	/** A pergunta seguinte da sequência, se houver. É um `transfer` no plano. */
@@ -163,6 +198,19 @@ class api_pesquisa {
 		}
 	}
 
+	/** Vazio quando não há agradecimento; recusa áudio que não existe. */
+	private static function caminho_do_agradecimento(string $dominio, array $dados): string {
+		$nome = trim((string) ($dados['agradecimento'] ?? ''));
+		if ($nome === '') {
+			return '';
+		}
+		$caminho = self::caminho_do_audio($dominio, $nome);
+		if (!file_exists($caminho)) {
+			responde(['erro' => 'áudio de agradecimento não existe neste domínio'], 404);
+		}
+		return $caminho;
+	}
+
 	/** A próxima pergunta tem de existir e ser uma pesquisa, não outro destino. */
 	private static function validar_proxima(string $domain_uuid, string $numero, string $proxima): void {
 		if ($proxima === '') {
@@ -210,6 +258,7 @@ class api_pesquisa {
 
 		$proxima = trim((string) ($dados['proxima'] ?? ''));
 		self::validar_proxima($domain_uuid, $numero, $proxima);
+		$agradecimento = self::caminho_do_agradecimento($dominio, $dados);
 
 		$uuid = uuid();
 		$p = permissions::new();
@@ -219,7 +268,8 @@ class api_pesquisa {
 
 		$db = self::db();
 		$array['dialplans'][0] = self::dialplan($domain_uuid, $uuid, $dominio, $numero,
-			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''), $proxima);
+			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''),
+			$proxima, $agradecimento);
 		$db->save($array);
 		self::exigir_gravado($db, "a pesquisa $numero");
 		foreach (['dialplan_add', 'dialplan_detail_add'] as $permissao) {
@@ -266,13 +316,15 @@ class api_pesquisa {
 
 		$proxima = trim((string) ($dados['proxima'] ?? ''));
 		self::validar_proxima($domain_uuid, $numero, $proxima);
+		$agradecimento = self::caminho_do_agradecimento($dominio, $dados);
 
 		$p = permissions::new();
 		foreach (['dialplan_add', 'dialplan_edit', 'dialplan_detail_add'] as $permissao) {
 			$p->add($permissao, 'temp');
 		}
 		$array['dialplans'][0] = self::dialplan($domain_uuid, $uuid, $dominio, $numero,
-			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''), $proxima);
+			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''),
+			$proxima, $agradecimento);
 		$db->save($array);
 		self::exigir_gravado($db, "a pesquisa $numero");
 		foreach (['dialplan_add', 'dialplan_edit', 'dialplan_detail_add'] as $permissao) {
@@ -331,7 +383,7 @@ class api_pesquisa {
 
 	private static function dialplan(string $domain_uuid, string $uuid, string $dominio,
 		string $numero, string $nome, string $audio, string $descricao,
-		string $proxima = ''): array {
+		string $proxima = '', string $agradecimento = ''): array {
 
 		// Os argumentos do `play_and_get_digits` são separados por ESPAÇO
 		// (mod_dptools.c:2841), nesta ordem: mínimo, máximo, tentativas, espera,
@@ -363,6 +415,17 @@ class api_pesquisa {
 			. api_anuncio::ESPERA_ANTES_DO_AUDIO . '"/>' . "\n";
 		$xml .= '		<action application="play_and_get_digits" data="' . xml::sanitize($coleta) . '"/>' . "\n";
 		$xml .= '		<action application="lua" data="' . self::SCRIPT . '"/>' . "\n";
+		// O "obrigado" depois da nota. NAO e outra pesquisa: pesquisa pergunta e
+		// espera digito, entao um agradecimento virado pesquisa fica repetindo
+		// para sempre pedindo nota de um audio que nao pergunta nada -- foi o
+		// que aconteceu na ligacao de 08/10/2026.
+		//
+		// `playback_terminators=none` so aqui, DEPOIS da coleta: antes dela
+		// atrapalharia o digito que quem ligou aperta durante a pergunta.
+		if ($agradecimento !== '') {
+			$xml .= '		<action application="set" data="playback_terminators=none"/>' . "\n";
+			$xml .= '		<action application="playback" data="' . xml::sanitize($agradecimento) . '"/>' . "\n";
+		}
 		// A sequência é a própria pesquisa transferindo para a seguinte. Não dá
 		// para encadear por `transfer_after_bridge`: ela se apaga ao ser
 		// consumida (switch_ivr_bridge.c:958), então leva o cliente até a
