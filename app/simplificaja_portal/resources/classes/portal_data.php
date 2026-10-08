@@ -277,12 +277,45 @@ class simplificaja_portal_data {
 		return is_array($rows) ? $rows : [];
 	}
 
+	/**
+	 * Média por pergunta. Com mais de uma pesquisa na mesma fila -- "nota do
+	 * atendente" e depois "nota da empresa" -- a média geral mistura coisas
+	 * diferentes e não diz nada. Esta é a leitura que importa.
+	 *
+	 * O nome da pergunta mora no plano de discagem, não na tabela de notas, para
+	 * não haver dois lugares com o mesmo nome saindo de sincronia.
+	 */
+	public function rating_by_question(DateTimeImmutable $since): array {
+		$sql = "select p.pesquisa, coalesce(d.dialplan_name, p.pesquisa) as pergunta, ";
+		$sql .= "count(*) as respostas, round(avg(p.nota), 2) as media ";
+		$sql .= "from v_simplificaja_pesquisas p ";
+		$sql .= "left join v_dialplans d on d.domain_uuid = p.domain_uuid ";
+		$sql .= "and d.dialplan_number = p.pesquisa and d.app_uuid = :app_uuid ";
+		$sql .= "where p.domain_uuid = :domain_uuid and p.criado_em >= :since ";
+		$parameters = [
+			'domain_uuid' => $this->domain_uuid,
+			'since' => $since->format('Y-m-d H:i:sP'),
+			'app_uuid' => '1e9f0b45-d844-40ab-b900-aec2f465d408',
+		];
+		$sql .= $this->extension_scope_sql('p.extension_uuid', $parameters, $this->cdr_domain_view);
+		$sql .= "group by p.pesquisa, d.dialplan_name order by p.pesquisa";
+		$rows = $this->database->select($sql, $parameters, 'all');
+		return is_array($rows) ? $rows : [];
+	}
+
 	public function rating_history(int $days, string $search): array {
 		$since = new DateTimeImmutable('-'.max(1, min($days, 90)).' days');
-		$sql = "select p.criado_em, p.nota, p.ramal, p.fila, p.telefone ";
+		$sql = "select p.criado_em, p.nota, p.ramal, p.fila, p.telefone, ";
+		$sql .= "coalesce(d.dialplan_name, p.pesquisa) as pergunta ";
 		$sql .= "from v_simplificaja_pesquisas p ";
+		$sql .= "left join v_dialplans d on d.domain_uuid = p.domain_uuid ";
+		$sql .= "and d.dialplan_number = p.pesquisa and d.app_uuid = :app_uuid ";
 		$sql .= "where p.domain_uuid = :domain_uuid and p.criado_em >= :since ";
-		$parameters = ['domain_uuid' => $this->domain_uuid, 'since' => $since->format('Y-m-d H:i:sP')];
+		$parameters = [
+			'domain_uuid' => $this->domain_uuid,
+			'since' => $since->format('Y-m-d H:i:sP'),
+			'app_uuid' => '1e9f0b45-d844-40ab-b900-aec2f465d408',
+		];
 		$sql .= $this->extension_scope_sql('p.extension_uuid', $parameters, $this->cdr_domain_view);
 		if ($search !== '') {
 			$sql .= "and (p.telefone ilike :search or p.ramal ilike :search) ";

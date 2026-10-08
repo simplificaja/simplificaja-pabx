@@ -43,6 +43,18 @@ local ok, err = pcall(function()
 		return
 	end
 
+	-- Qual pergunta esta nota responde. Uma fila pode pedir duas em sequência,
+	-- e a segunda sobrescreve a variável `nota` -- sem isto as duas notas da
+	-- mesma ligação ficariam indistinguíveis. O plano de cada pesquisa seta
+	-- este valor com o próprio número antes de coletar.
+	local qual = session:getVariable("pesquisa_atual")
+	if qual == nil or qual == "" then
+		freeswitch.consoleLog("err",
+			"[pesquisa] sem pesquisa_atual; nota " .. nota .. " perdida. "
+			.. "O plano de discagem desta pesquisa precisa ser salvo de novo.\n")
+		return
+	end
+
 	require "resources.functions.config"
 	local Database = require "resources.functions.database"
 
@@ -86,16 +98,18 @@ local ok, err = pcall(function()
 			function(row) extension_uuid = row.extension_uuid end)
 	end
 
-	-- `on conflict do nothing`: o `transfer_after_bridge` se apaga ao ser
-	-- consumido e dispara uma vez só, mas o índice único é a segunda rede.
+	-- `on conflict do nothing`: a unicidade é por (chamada, pergunta), não por
+	-- chamada -- uma ligação pode responder duas perguntas. O índice é a
+	-- segunda rede contra a mesma pergunta gravar duas vezes.
 	dbh:query(
 		"insert into v_simplificaja_pesquisas "
-		.. "(pesquisa_uuid, domain_uuid, call_uuid, nota, ramal, extension_uuid, fila, telefone) "
-		.. "values (gen_random_uuid(), :dominio, :chamada, :nota, :ramal, :ramal_uuid, :fila, :telefone) "
-		.. "on conflict (call_uuid) do nothing",
+		.. "(pesquisa_uuid, domain_uuid, call_uuid, pesquisa, nota, ramal, extension_uuid, fila, telefone) "
+		.. "values (gen_random_uuid(), :dominio, :chamada, :qual, :nota, :ramal, :ramal_uuid, :fila, :telefone) "
+		.. "on conflict (call_uuid, pesquisa) do nothing",
 		{
 			dominio    = domain_uuid,
 			chamada    = call_uuid,
+			qual       = qual,
 			nota       = tonumber(nota),
 			ramal      = ou_nulo(ramal),
 			ramal_uuid = ou_nulo(extension_uuid),
@@ -114,15 +128,17 @@ local ok, err = pcall(function()
 	-- inserido na segunda vez, mas a linha existe, e isso é sucesso.
 	local gravou = false
 	dbh:query(
-		"select 1 as achou from v_simplificaja_pesquisas where call_uuid = :chamada",
-		{ chamada = call_uuid },
+		"select 1 as achou from v_simplificaja_pesquisas "
+		.. "where call_uuid = :chamada and pesquisa = :qual",
+		{ chamada = call_uuid, qual = qual },
 		function() gravou = true end)
 
 	dbh:release()
 
 	if gravou then
 		freeswitch.consoleLog("notice",
-			"[pesquisa] nota " .. nota .. " do ramal " .. tostring(ramal) .. " gravada\n")
+			"[pesquisa] pergunta " .. qual .. ": nota " .. nota
+			.. " do ramal " .. tostring(ramal) .. " gravada\n")
 	else
 		freeswitch.consoleLog("err",
 			"[pesquisa] nota " .. nota .. " NAO foi gravada para a chamada "

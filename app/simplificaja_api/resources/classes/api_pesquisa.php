@@ -36,6 +36,12 @@ class api_pesquisa {
 	/** Mora em /usr/share/freeswitch/scripts; o `require` de lá depende disso. */
 	const SCRIPT = 'simplificaja_pesquisa.lua';
 
+	/**
+	 * Teto da corrente de perguntas, só para a checagem de ciclo não girar para
+	 * sempre num banco que já tenha um laço gravado por outro caminho.
+	 */
+	const PERGUNTAS_MAXIMAS = 10;
+
 	private static function db() {
 		return database::new(['db' => $GLOBALS['db'] ?? null]);
 	}
@@ -68,6 +74,7 @@ class api_pesquisa {
 		// com o plano de discagem. Mesmo motivo do anúncio.
 		foreach ($linhas as &$linha) {
 			$linha['audio'] = self::audio_do_xml($linha['dialplan_xml'] ?? null);
+			$linha['proxima'] = self::proxima_do_xml($linha['dialplan_xml'] ?? null);
 			$linha['usada_por'] = self::quem_usa($domain_uuid, (string) $linha['dialplan_number']);
 			unset($linha['dialplan_xml']);
 		}
@@ -90,15 +97,89 @@ class api_pesquisa {
 		return isset($partes[5]) ? basename($partes[5]) : null;
 	}
 
-	/** Filas cujo plano transfere para esta pesquisa ao fim do bridge. */
+	/** A pergunta seguinte da sequência, se houver. É um `transfer` no plano. */
+	private static function proxima_do_xml(?string $xml): ?string {
+		if ($xml === null) {
+			return null;
+		}
+		if (!preg_match('/application="transfer" data="([^" ]+)/', $xml, $m)) {
+			return null;
+		}
+		return $m[1];
+	}
+
+	/**
+	 * Quem deixa de funcionar se esta pesquisa sumir, nos dois sentidos: a fila
+	 * que leva o cliente até ela, e a pesquisa anterior da sequência.
+	 */
 	private static function quem_usa(string $domain_uuid, string $numero): array {
-		$linhas = self::db()->select(
+		$db = self::db();
+
+		// Fila: chega aqui pelo `transfer_after_bridge`, no fim do bridge.
+		$filas = $db->select(
 			"select dialplan_number from v_dialplans "
 			."where domain_uuid = :u and dialplan_xml like :p "
 			."order by dialplan_number",
 			['u' => $domain_uuid, 'p' => '%transfer_after_bridge=' . $numero . ':%'], 'all'
 		) ?? [];
-		return array_column($linhas, 'dialplan_number');
+
+		// Pesquisa anterior: chega aqui por `transfer`, como a próxima pergunta.
+		$pesquisas = $db->select(
+			"select dialplan_number from v_dialplans "
+			."where domain_uuid = :u and app_uuid = :a and dialplan_number <> :n "
+			."and dialplan_xml like :p order by dialplan_number",
+			['u' => $domain_uuid, 'a' => self::APP_UUID, 'n' => $numero,
+			 'p' => '%application="transfer" data="' . $numero . ' %'], 'all'
+		) ?? [];
+
+		return array_merge(array_column($filas, 'dialplan_number'),
+			array_column($pesquisas, 'dialplan_number'));
+	}
+
+	/**
+	 * Recusa a sequência que fecha ciclo. `6000 -> 6001 -> 6000` prenderia quem
+	 * ligou girando entre perguntas, e o plano de discagem não tem como sair.
+	 *
+	 * Barrar na gravação é mais barato que guarda no plano, e mais honesto: o
+	 * erro aparece para quem configurou, na hora, em vez de para quem ligou.
+	 */
+	private static function exigir_sem_ciclo(string $domain_uuid, string $numero, string $proxima): void {
+		$db = self::db();
+		$atual = $proxima;
+		$vistos = [$numero];
+
+		for ($i = 0; $i < self::PERGUNTAS_MAXIMAS && $atual !== ''; $i++) {
+			if (in_array($atual, $vistos, true)) {
+				responde(['erro' => "a sequência volta para a pesquisa $atual e ficaria girando; "
+					.'escolha outra próxima pergunta'], 409);
+			}
+			$vistos[] = $atual;
+			$xml = $db->select(
+				"select dialplan_xml from v_dialplans "
+				."where domain_uuid = :u and app_uuid = :a and dialplan_number = :n",
+				['u' => $domain_uuid, 'a' => self::APP_UUID, 'n' => $atual], 'column'
+			);
+			$atual = (string) (self::proxima_do_xml($xml) ?? '');
+		}
+	}
+
+	/** A próxima pergunta tem de existir e ser uma pesquisa, não outro destino. */
+	private static function validar_proxima(string $domain_uuid, string $numero, string $proxima): void {
+		if ($proxima === '') {
+			return;
+		}
+		if ($proxima === $numero) {
+			responde(['erro' => 'a pesquisa não pode apontar para si mesma'], 409);
+		}
+		$existe = self::db()->select(
+			"select dialplan_number from v_dialplans "
+			."where domain_uuid = :u and app_uuid = :a and dialplan_number = :n",
+			['u' => $domain_uuid, 'a' => self::APP_UUID, 'n' => $proxima], 'column'
+		);
+		if (empty($existe)) {
+			responde(['erro' => "não existe pesquisa no número $proxima para ser a próxima pergunta"], 404);
+		}
+		self::exigir_sem_ciclo($domain_uuid, $numero, $proxima);
 	}
 
 	public static function criar(string $domain_uuid, array $dados): array {
@@ -127,6 +208,9 @@ class api_pesquisa {
 			responde(['erro' => 'áudio não existe neste domínio'], 404);
 		}
 
+		$proxima = trim((string) ($dados['proxima'] ?? ''));
+		self::validar_proxima($domain_uuid, $numero, $proxima);
+
 		$uuid = uuid();
 		$p = permissions::new();
 		foreach (['dialplan_add', 'dialplan_detail_add'] as $permissao) {
@@ -135,7 +219,7 @@ class api_pesquisa {
 
 		$db = self::db();
 		$array['dialplans'][0] = self::dialplan($domain_uuid, $uuid, $dominio, $numero,
-			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''));
+			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''), $proxima);
 		$db->save($array);
 		self::exigir_gravado($db, "a pesquisa $numero");
 		foreach (['dialplan_add', 'dialplan_detail_add'] as $permissao) {
@@ -144,7 +228,8 @@ class api_pesquisa {
 
 		self::recarregar($dominio);
 
-		return ['pesquisa' => $dados['nome'], 'numero' => $numero, 'audio' => basename($audio)];
+		return ['pesquisa' => $dados['nome'], 'numero' => $numero,
+			'audio' => basename($audio), 'proxima' => $proxima === '' ? null : $proxima];
 	}
 
 	/**
@@ -179,12 +264,15 @@ class api_pesquisa {
 			responde(['erro' => 'áudio não existe neste domínio'], 404);
 		}
 
+		$proxima = trim((string) ($dados['proxima'] ?? ''));
+		self::validar_proxima($domain_uuid, $numero, $proxima);
+
 		$p = permissions::new();
 		foreach (['dialplan_add', 'dialplan_edit', 'dialplan_detail_add'] as $permissao) {
 			$p->add($permissao, 'temp');
 		}
 		$array['dialplans'][0] = self::dialplan($domain_uuid, $uuid, $dominio, $numero,
-			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''));
+			(string) $dados['nome'], $audio, (string) ($dados['descricao'] ?? ''), $proxima);
 		$db->save($array);
 		self::exigir_gravado($db, "a pesquisa $numero");
 		foreach (['dialplan_add', 'dialplan_edit', 'dialplan_detail_add'] as $permissao) {
@@ -193,7 +281,8 @@ class api_pesquisa {
 
 		self::recarregar($dominio);
 
-		return ['pesquisa' => $dados['nome'], 'numero' => $numero, 'audio' => basename($audio)];
+		return ['pesquisa' => $dados['nome'], 'numero' => $numero,
+			'audio' => basename($audio), 'proxima' => $proxima === '' ? null : $proxima];
 	}
 
 	public static function remover(string $domain_uuid, string $numero): array {
@@ -207,13 +296,14 @@ class api_pesquisa {
 			responde(['erro' => "não existe pesquisa no número $numero"], 404);
 		}
 
-		// Fila que ainda aponta para esta pesquisa passaria a transferir para um
+		// Quem ainda aponta para esta pesquisa passaria a transferir para um
 		// número inexistente, e aí quem ligou ouve erro em vez de desligar.
-		// Recusar é mais honesto que deixar quebrado em silêncio.
+		// Vale para os dois sentidos: a fila que leva até ela, e a pergunta
+		// anterior da sequência. Recusar é mais honesto que quebrar em silêncio.
 		$usada = self::quem_usa($domain_uuid, $numero);
 		if (!empty($usada)) {
-			responde(['erro' => "a pesquisa $numero ainda é usada pela fila "
-				. implode(', ', $usada) . '; tire a pesquisa da fila antes de remover'], 409);
+			responde(['erro' => "a pesquisa $numero ainda é usada por "
+				. implode(', ', $usada) . '; desligue-a de lá antes de remover'], 409);
 		}
 
 		$p = permissions::new();
@@ -240,7 +330,8 @@ class api_pesquisa {
 	}
 
 	private static function dialplan(string $domain_uuid, string $uuid, string $dominio,
-		string $numero, string $nome, string $audio, string $descricao): array {
+		string $numero, string $nome, string $audio, string $descricao,
+		string $proxima = ''): array {
 
 		// Os argumentos do `play_and_get_digits` são separados por ESPAÇO
 		// (mod_dptools.c:2841), nesta ordem: mínimo, máximo, tentativas, espera,
@@ -259,6 +350,11 @@ class api_pesquisa {
 		$xml  = '<extension name="' . xml::sanitize($nome) . '" continue="" uuid="' . xml::sanitize($uuid) . '">' . "\n";
 		$xml .= '	<condition field="destination_number" expression="^' . xml::sanitize($numero) . '$">' . "\n";
 		$xml .= '		<action application="answer" data=""/>' . "\n";
+		// Qual pergunta esta nota responde. Duas perguntas em sequência
+		// sobrescrevem a variável `nota`, então sem isto as notas da mesma
+		// ligação ficariam indistinguíveis -- e a média por pergunta, que é o
+		// ponto de ter duas, seria impossível.
+		$xml .= '		<action application="set" data="pesquisa_atual=' . xml::sanitize($numero) . '"/>' . "\n";
 		// Mesma constante do anúncio: sem o silêncio a operadora descarta o
 		// começo da frase, porque o caminho de áudio até o celular ainda não
 		// está pronto quando o nosso 200 OK sai. `sleep` não serve -- espera sem
@@ -267,6 +363,17 @@ class api_pesquisa {
 			. api_anuncio::ESPERA_ANTES_DO_AUDIO . '"/>' . "\n";
 		$xml .= '		<action application="play_and_get_digits" data="' . xml::sanitize($coleta) . '"/>' . "\n";
 		$xml .= '		<action application="lua" data="' . self::SCRIPT . '"/>' . "\n";
+		// A sequência é a própria pesquisa transferindo para a seguinte. Não dá
+		// para encadear por `transfer_after_bridge`: ela se apaga ao ser
+		// consumida (switch_ivr_bridge.c:958), então leva o cliente até a
+		// PRIMEIRA pergunta e só. Mesmo mecanismo do anúncio, que já encadeia
+		// `anúncio -> anúncio -> fila`.
+		//
+		// O `lua` roda ANTES do transfer, então a nota desta pergunta já está
+		// gravada quando a próxima sobrescreve a variável.
+		if ($proxima !== '') {
+			$xml .= '		<action application="transfer" data="' . xml::sanitize($proxima) . ' XML ' . $dominio . '"/>' . "\n";
+		}
 		$xml .= '		<action application="hangup" data=""/>' . "\n";
 		$xml .= '	</condition>' . "\n";
 		$xml .= '</extension>' . "\n";

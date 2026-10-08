@@ -89,6 +89,7 @@ elseif ($view === 'ratings') {
 	$rating_summary = $portal->rating_summary($since_ratings);
 	$rating_distribution = $portal->rating_distribution($since_ratings);
 	$rating_by_extension = $portal->rating_by_extension($since_ratings);
+	$rating_by_question = $portal->rating_by_question($since_ratings);
 	$rating_history = $portal->rating_history(30, $history_search);
 	// Taxa de resposta: quantos avaliaram, de quantos foram atendidos. Sem
 	// consulta nova -- `call_count` ja existe e ja respeita o escopo.
@@ -267,6 +268,13 @@ $display_time = static function ($value) use ($timezone): string {
 						<div class="sj-ext-note">Ligação atendida em que o cliente não digitou nada não entra na média.</div>
 					</section>
 					<section class="sj-card">
+						<div class="sj-card-head"><span>Por pergunta</span><i class="fas fa-circle-question"></i></div>
+						<?php if (empty($rating_by_question)): ?><div class="sj-ext-note">Nenhuma avaliação no período.</div><?php endif; ?>
+						<?php foreach ($rating_by_question as $pergunta): ?>
+						<div class="sj-missed"><strong><?= $e((string) $pergunta['pergunta']) ?></strong><span><?= (int) $pergunta['respostas'] ?> resposta(s)</span><span class="sj-badge <?= (float) $pergunta['media'] >= 4 ? 'answered' : ((float) $pergunta['media'] < 3 ? 'missed' : '') ?>"><?= $e(number_format((float) $pergunta['media'], 2, ',', '')) ?></span></div>
+						<?php endforeach; ?>
+					</section>
+					<section class="sj-card">
 						<div class="sj-card-head"><span>Distribuição</span><i class="fas fa-chart-simple"></i></div>
 						<?php if (empty($rating_distribution)): ?><div class="sj-ext-note">Nenhuma avaliação no período.</div><?php else: $maior_nota = max(array_map('intval', array_column($rating_distribution, 'total'))); ?>
 						<?php foreach ($rating_distribution as $faixa): ?>
@@ -286,10 +294,10 @@ $display_time = static function ($value) use ($timezone): string {
 					<input type="hidden" name="view" value="ratings">
 					<label class="sj-search"><i class="fas fa-magnifying-glass"></i><input type="search" name="search" value="<?= $e($history_search) ?>" placeholder="Buscar número ou ramal" aria-label="Buscar número ou ramal"></label>
 				</form>
-				<div class="sj-table-wrap"><table class="sj-table"><thead><tr><th>Data e hora</th><th>Número</th><th>Ramal</th><th>Fila</th><th>Nota</th></tr></thead><tbody>
+				<div class="sj-table-wrap"><table class="sj-table"><thead><tr><th>Data e hora</th><th>Número</th><th>Pergunta</th><th>Ramal</th><th>Fila</th><th>Nota</th></tr></thead><tbody>
 				<?php foreach ($rating_history as $avaliacao): $nota = (int) $avaliacao['nota']; ?>
-				<tr><td><?= $e($display_time($avaliacao['criado_em'])) ?></td><td><strong><?= $e((string) ($avaliacao['telefone'] ?: 'Número indisponível')) ?></strong></td><td><?= $e((string) ($avaliacao['ramal'] ?: '—')) ?></td><td><?= $e((string) ($avaliacao['fila'] ?: '—')) ?></td><td><span class="sj-badge <?= $nota >= 4 ? 'answered' : ($nota < 3 ? 'missed' : '') ?>"><?= $nota ?></span></td></tr>
-				<?php endforeach; if (empty($rating_history)): ?><tr><td colspan="5" style="text-align:center;color:#737a80">Nenhuma avaliação ainda. A pesquisa só toca quando o atendente encerra a ligação.</td></tr><?php endif; ?>
+				<tr><td><?= $e($display_time($avaliacao['criado_em'])) ?></td><td><strong><?= $e((string) ($avaliacao['telefone'] ?: 'Número indisponível')) ?></strong></td><td><?= $e((string) ($avaliacao['pergunta'] ?: '—')) ?></td><td><?= $e((string) ($avaliacao['ramal'] ?: '—')) ?></td><td><?= $e((string) ($avaliacao['fila'] ?: '—')) ?></td><td><span class="sj-badge <?= $nota >= 4 ? 'answered' : ($nota < 3 ? 'missed' : '') ?>"><?= $nota ?></span></td></tr>
+				<?php endforeach; if (empty($rating_history)): ?><tr><td colspan="6" style="text-align:center;color:#737a80">Nenhuma avaliação ainda. A pesquisa só toca quando o atendente encerra a ligação.</td></tr><?php endif; ?>
 				</tbody></table></div>
 				<div class="sj-table-footer"><span><?= count($rating_history) ?> avaliação(ões) · últimos 30 dias</span><span>Exibindo até 200 registros</span></div>
 			<?php else: ?>

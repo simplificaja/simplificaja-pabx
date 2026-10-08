@@ -160,13 +160,15 @@ taxa de resposta.
 create table if not exists v_simplificaja_pesquisas (
     pesquisa_uuid  uuid        primary key,
     domain_uuid    uuid        not null,
-    call_uuid      uuid        not null unique,
+    call_uuid      uuid        not null,
+    pesquisa       text        not null,
     nota           smallint    not null check (nota between 1 and 5),
     ramal          text,
     extension_uuid uuid,
     fila           text,
     telefone       text,
-    criado_em      timestamptz not null default now()
+    criado_em      timestamptz not null default now(),
+    unique (call_uuid, pesquisa)
 );
 
 create index if not exists idx_simplificaja_pesquisas_dominio
@@ -192,8 +194,14 @@ varredura de 8 para 85 tabelas. **Renomear esta tabela sem manter o `v_` e o
 Chatwoot valida (`CsatSurveyResponse` tem `inclusion: { in: [1,2,3,4,5] }`).
 Gravar 0–9 aqui tornaria a integração futura uma conversão com perda.
 
-`call_uuid` é `unique` como segunda rede: a variável já dispara uma vez só, e o
-índice garante que uma reentrada acidental não duplique.
+`pesquisa` guarda o número da pesquisa que gerou a nota, e a unicidade é
+`(call_uuid, pesquisa)`, não `call_uuid` sozinho. **Uma ligação pode gerar mais
+de uma nota**, porque uma fila pode pedir duas perguntas em sequência -- "nota
+do atendente" e depois "nota da empresa". Com `call_uuid` único, a segunda nota
+seria descartada em silêncio pelo `on conflict do nothing`.
+
+A unicidade continua sendo a segunda rede contra reentrada: a mesma pesquisa não
+grava duas vezes na mesma ligação.
 
 ## A tabela não nasce pelo FusionPBX
 
@@ -319,6 +327,75 @@ não colidem, porque atendem caminhos diferentes:
 
 Fila com estouro **e** pesquisa é portanto uma combinação válida, e a validação
 de aceite cobre as duas pernas.
+
+## Mais de uma pesquisa, e em sequência
+
+Decidido em 08/10/2026. Um cliente pode ter várias pesquisas, cada fila escolhe
+a sua, e uma fila pode pedir duas perguntas em sequência:
+
+```
+fila 9100 (Atendimento)  →  6000 "nota do atendente"
+                                 ↓  proxima
+                            6001 "nota da empresa"
+                                 ↓
+                              desliga
+
+fila 9200 (Suporte)      →  6002 "resolveu seu problema?"
+fila 9300 (Financeiro)   →  sem pesquisa
+```
+
+### O encadeamento não pode usar `transfer_after_bridge`
+
+A variável se apaga ao ser consumida (`switch_ivr_bridge.c:958`), então ela leva
+o cliente para a **primeira** pesquisa e só. A sequência é a própria pesquisa
+transferindo para a seguinte -- é o mesmo mecanismo pelo qual o anúncio já
+encadeia `anúncio → anúncio → fila`.
+
+Cada pesquisa ganha um campo opcional `proxima`. Sem ele, a pesquisa termina em
+`hangup`, como hoje. Com ele, o `hangup` dá lugar a um `transfer`:
+
+```xml
+<action application="play_and_get_digits" data="... nota ^[1-5]$ 3000"/>
+<action application="lua" data="simplificaja_pesquisa.lua"/>
+<action application="transfer" data="6001 XML demo.pabx.simplificaja.com.br"/>
+```
+
+A ordem importa: o `lua` roda **antes** do `transfer`, então a nota da pergunta
+atual já está gravada quando a próxima pergunta sobrescreve a variável `nota`.
+
+`cc_agent`, `cc_queue` e `cc_agent_bridged` são variáveis de canal e sobrevivem
+ao transfer, então toda nota da sequência sai com o mesmo atendente e a mesma
+fila -- que é o que faz as duas perguntas serem comparáveis.
+
+### Qual pergunta cada nota responde
+
+O plano de cada pesquisa seta `pesquisa_atual` com o próprio número, antes de
+coletar:
+
+```xml
+<action application="set" data="pesquisa_atual=6000"/>
+```
+
+O script Lua grava esse valor na coluna `pesquisa`. Sem isso as duas notas da
+mesma ligação ficariam indistinguíveis, e a média por pergunta -- que é o ponto
+de ter duas -- seria impossível.
+
+### Laço é recusado na gravação, não tratado na ligação
+
+`6000 → 6001 → 6000` giraria para sempre, com o cliente preso. Em vez de guarda
+no plano de discagem, a API **recusa** o `proxima` que fecha ciclo: ao salvar,
+caminha a corrente a partir do destino e devolve 409 se reencontrar a pesquisa
+que está sendo editada.
+
+É mais barato e mais honesto: o erro aparece para quem configurou, na hora, em
+vez de aparecer para quem ligou.
+
+### Remover respeita quem aponta
+
+A recusa de remoção passa a cobrir os dois sentidos: fila que aponta para a
+pesquisa (pelo `transfer_after_bridge`) **e** pesquisa que aponta para ela pelo
+`proxima`. Remover sem isso deixaria uma sequência transferindo para um número
+que não existe.
 
 ## O script que grava
 
