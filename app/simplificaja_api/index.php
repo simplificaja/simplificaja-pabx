@@ -148,7 +148,10 @@
 		// Pesquisa de avaliacao: a fila a alcanca por `transfer_after_bridge`,
 		// quando o atendente desliga. Nao e destino que alguem disca.
 		case 'GET pesquisas':
-			responde(['pesquisas' => api_pesquisa::listar($domain_uuid)]);
+			// Array direto, como anuncio e horario. Embrulhar em
+			// `['pesquisas' => ...]` fazia o hub receber um Hash onde esperava
+			// Array, e a aba estourava com "no implicit conversion".
+			responde(api_pesquisa::listar($domain_uuid));
 
 		case 'POST pesquisas':
 			responde(api_pesquisa::criar($domain_uuid, corpo()));
