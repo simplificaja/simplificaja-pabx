@@ -86,6 +86,26 @@ local ok, err = pcall(function()
 	local agente = session:getVariable("cc_agent") or ""
 	local ramal = agente:match("^([^@]+)")
 
+	-- Nesta instalacao o `cc_agent` vem como o UUID do agente, nao como
+	-- `1001@dominio`. Medido numa ligacao real de 08/10/2026: a nota saiu com
+	-- "ramal 07a8d7f9-8b03-4083-8887-4f023b5d61f4", e a tela por atendente
+	-- mostraria UUID -- inutil para quem precisa agir sobre uma nota baixa.
+	--
+	-- O numero do ramal esta no `agent_name`. Tratar as duas formas, porque
+	-- `cc_agent` e documentado como nome do agente e o nome pode ser qualquer
+	-- coisa dependendo de como o agente foi criado.
+	if ramal ~= nil and ramal:match("^%x%x%x%x%x%x%x%x%-%x%x%x%x%-") then
+		local pelo_uuid = nil
+		dbh:query(
+			"select agent_name from v_call_center_agents "
+			.. "where call_center_agent_uuid = :agente",
+			{ agente = ramal },
+			function(row) pelo_uuid = row.agent_name end)
+		if pelo_uuid ~= nil and pelo_uuid ~= "" then
+			ramal = pelo_uuid
+		end
+	end
+
 	-- O escopo por usuário do portal compara `extension_uuid`, como toda
 	-- consulta de lá. Guardar o uuid e não só o número é o que faz a aba nova
 	-- seguir a mesma regra de visibilidade das outras três.
@@ -113,7 +133,10 @@ local ok, err = pcall(function()
 			nota       = tonumber(nota),
 			ramal      = ou_nulo(ramal),
 			ramal_uuid = ou_nulo(extension_uuid),
-			fila       = ou_nulo(session:getVariable("cc_queue")),
+			-- So o numero: `cc_queue` vem como `9100@dominio`, e o dominio numa
+			-- tela de cliente nao acrescenta nada. O nome bonito da fila o
+			-- portal resolve no banco, como ja faz com o nome da pergunta.
+			fila       = ou_nulo((session:getVariable("cc_queue") or ""):match("^([^@]+)")),
 			telefone   = ou_nulo(session:getVariable("caller_id_number")),
 		})
 

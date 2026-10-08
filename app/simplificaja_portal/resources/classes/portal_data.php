@@ -305,11 +305,16 @@ class simplificaja_portal_data {
 
 	public function rating_history(int $days, string $search): array {
 		$since = new DateTimeImmutable('-'.max(1, min($days, 90)).' days');
-		$sql = "select p.criado_em, p.nota, p.ramal, p.fila, p.telefone, ";
-		$sql .= "coalesce(d.dialplan_name, p.pesquisa) as pergunta ";
+		$sql = "select p.criado_em, p.nota, p.ramal, p.telefone, ";
+		$sql .= "coalesce(d.dialplan_name, p.pesquisa) as pergunta, ";
+		// O nome da fila mora na tabela dela, nao na nota: assim renomear a fila
+		// nao deixa o historico com dois nomes para a mesma coisa.
+		$sql .= "coalesce(q.queue_name, p.fila) as fila ";
 		$sql .= "from v_simplificaja_pesquisas p ";
 		$sql .= "left join v_dialplans d on d.domain_uuid = p.domain_uuid ";
 		$sql .= "and d.dialplan_number = p.pesquisa and d.app_uuid = :app_uuid ";
+		$sql .= "left join v_call_center_queues q on q.domain_uuid = p.domain_uuid ";
+		$sql .= "and q.queue_extension = p.fila ";
 		$sql .= "where p.domain_uuid = :domain_uuid and p.criado_em >= :since ";
 		$parameters = [
 			'domain_uuid' => $this->domain_uuid,
