@@ -51,7 +51,12 @@ $volume_path = '';
 $maximo_volume = 0;
 $volume_area = '';
 $history = [];
-$history_days = in_array((string) ($_GET['days'] ?? '7'), ['1', '7', '30'], true) ? (int) $_GET['days'] : 7;
+// O ternario testava o valor JA com o padrao ('7', que passa na lista) e depois
+// convertia a chave crua -- ausente, (int) null = 0. Abrir a aba sem `?days=`
+// pedia periodo de ZERO dias, e a tela dizia "nenhuma ligacao" com ligacao no
+// banco. Achado em 08/10/2026 olhando a tela, nao o codigo.
+$dias_pedidos = (string) ($_GET['days'] ?? '7');
+$history_days = in_array($dias_pedidos, ['1', '7', '30'], true) ? (int) $dias_pedidos : 7;
 $history_status = in_array($_GET['status'] ?? '', ['missed', 'answered'], true) ? $_GET['status'] : '';
 $history_direction = in_array($_GET['direction'] ?? '', ['inbound', 'outbound'], true) ? $_GET['direction'] : '';
 $history_search = trim(substr((string) ($_GET['search'] ?? ''), 0, 60));
@@ -159,6 +164,98 @@ $display_time = static function ($value) use ($timezone): string {
 		@media(max-width:480px){.sj-crumb{font-size:12px}.sj-account-button{font-size:13px}.sj-flow-head{align-items:flex-start;flex-direction:column}}
 		@media(prefers-reduced-motion:reduce){.sj-side,.sj-nav-button,.sj-nav-button i,.sj-nav-label,.sj-active-marker,.sj-page{transition:none!important}.sj-active-marker.land-down,.sj-active-marker.land-up{animation:none!important}}
 	</style>
+	<style>
+	/* ---------------------------------------------------------------------
+	   Refino visual, aprovado em preview em 08/10/2026.
+	   Bloco separado de proposito: o CSS acima vem minificado numa linha so,
+	   e editar la dentro e onde se quebra tela sem perceber. Aqui e adicao.
+	   A paleta nao muda -- o problema era densidade e hierarquia, nao cor.
+	   --------------------------------------------------------------------- */
+
+	/* Arial era o padrao do tema do FusionPBX, nao uma escolha. A pilha do
+	   sistema deixa a tela parecer nativa sem inventar personalidade. */
+	body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+	     -webkit-font-smoothing:antialiased}
+
+	/* Numero em coluna que dança a cada atualizacao parece instavel, e esta e
+	   uma tela que fica aberta o dia inteiro. */
+	.sj-stat strong,.sj-ext-stat strong,.sj-table td,.sj-chart-y,.sj-badge,
+	.sj-faixa .v,.sj-dist b,.sj-med{font-variant-numeric:tabular-nums}
+
+	/* --- lateral aberta no desktop: so icone nao diz o que e cada coisa --- */
+	@media(min-width:901px){
+		.sj-side{flex:0 0 200px;width:200px}
+		.sj-nav-button{width:200px}
+		.sj-nav-label{width:138px;opacity:1;transform:none}
+		.sj-brand{height:56px;justify-content:flex-start;padding:0 18px;
+		          border-bottom:1px solid #313741}
+		.sj-brand:after{content:"SimplificaJá";margin-left:9px;color:#fff;
+		                font-size:13px;font-weight:600;letter-spacing:.2px}
+		.sj-brand img{width:21px;height:21px}
+	}
+
+	/* --- faixa de numeros: quatro cartoes altos viram uma linha de leitura --- */
+	.sj-faixa{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+	          margin-bottom:12px;border:1px solid var(--sj-line);border-radius:3px;background:#fff}
+	.sj-faixa .cel{min-width:0;padding:13px 16px;border-left:1px solid var(--sj-line)}
+	.sj-faixa .cel:first-child{border-left:0}
+	.sj-faixa .k{color:var(--sj-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+	.sj-faixa .v{margin-top:5px;font-size:25px;font-weight:600;line-height:1;letter-spacing:-.5px}
+	.sj-faixa .c{margin-top:5px;color:var(--sj-muted);font-size:11.5px}
+	.sj-faixa .v.ok{color:var(--sj-green)}
+	.sj-faixa .v.idle{color:#9aa1a8}
+	/* Estado desconhecido vira texto. Antes saiam dois travessoes coloridos, que
+	   estavam certos no codigo e pareciam defeito na tela. */
+	.sj-faixa .v.vazio{color:#9aa1a8;font-size:15px;font-weight:500;letter-spacing:0}
+	@media(max-width:760px){
+		.sj-faixa{grid-template-columns:repeat(2,minmax(0,1fr))}
+		.sj-faixa .cel:nth-child(3){border-left:0}
+		.sj-faixa .cel:nth-child(n+3){border-top:1px solid var(--sj-line)}
+	}
+
+	/* --- avaliacoes: uma nota focal, com a taxa como contexto dela --- */
+	.sj-nota-topo{display:grid;grid-template-columns:240px 1fr;margin-bottom:12px;
+	              border:1px solid var(--sj-line);border-radius:3px;background:#fff}
+	.sj-nota{padding:16px 18px;border-right:1px solid var(--sj-line)}
+	.sj-nota .k{color:var(--sj-muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+	.sj-nota .v{display:flex;align-items:baseline;gap:5px;margin-top:6px}
+	.sj-nota .v b{font-size:38px;font-weight:600;line-height:1;letter-spacing:-1px;
+	              font-variant-numeric:tabular-nums}
+	.sj-nota .v i{color:var(--sj-muted);font-size:14px;font-style:normal}
+	.sj-nota .c{margin-top:7px;color:var(--sj-muted);font-size:11.5px;line-height:1.55}
+	.sj-estrelas{margin-top:7px;color:#d8b43c;font-size:12px;letter-spacing:1px}
+	.sj-estrelas span{color:#d9dde1}
+	.sj-dist{padding:14px 18px}
+	.sj-dist .k{margin-bottom:9px;color:var(--sj-muted);font-size:11px;
+	            text-transform:uppercase;letter-spacing:.4px}
+	.sj-dist .lin{display:grid;grid-template-columns:52px 1fr 42px;align-items:center;
+	              gap:10px;margin-bottom:5px}
+	.sj-dist .lin:last-child{margin-bottom:0}
+	.sj-dist em{color:#5c646b;font-size:11.5px;font-style:normal}
+	.sj-dist .bar{height:7px;border-radius:2px;background:#eef0f2;overflow:hidden}
+	.sj-dist .bar span{display:block;height:100%;border-radius:2px}
+	.sj-dist b{text-align:right;color:#4b5258;font-size:11.5px;font-weight:600}
+	.sj-dist .lin.zero em,.sj-dist .lin.zero b{color:#aab0b6}
+	@media(max-width:760px){
+		.sj-nota-topo{grid-template-columns:1fr}
+		.sj-nota{border-right:0;border-bottom:1px solid var(--sj-line)}
+	}
+
+	/* A nota e numero, nao etiqueta: nada de pilula larga para dizer "5,00". */
+	.sj-med{font-weight:600}
+	.sj-med.ok{color:var(--sj-green)}
+	.sj-med.mid{color:#8a5a12}
+	.sj-med.bad{color:var(--sj-red)}
+	.sj-table td.r,.sj-table th.r{text-align:right}
+	.sj-chip{display:inline-block;min-width:22px;padding:1px 6px;border-radius:2px;
+	         text-align:center;font-size:11.5px;font-weight:600;font-variant-numeric:tabular-nums}
+	.sj-chip.ok{background:#e9f2ec;color:var(--sj-green)}
+	.sj-chip.mid{background:#f6efdc;color:#8a5a12}
+	.sj-chip.bad{background:#f7e9e8;color:var(--sj-red)}
+
+	/* Estado vazio em uma linha, nao num cartao de 90px de altura. */
+	.sj-vazio{padding:13px 16px;color:var(--sj-muted);font-size:12.5px}
+	</style>
 </head>
 <body>
 <div id="sj-portal">
@@ -183,31 +280,49 @@ $display_time = static function ($value) use ($timezone): string {
 			<?php if ($view === 'dashboard'): ?>
 				<div class="sj-action"><span class="sj-title">Visão geral</span></div>
 				<div class="sj-toolbar"><span class="sj-muted">Resumo da operação telefônica · últimas 24 horas</span><span class="sj-muted"><?= number_format($total_calls, 0, ',', '.') ?> ligações no período</span></div>
-				<div class="sj-grid">
-					<section class="sj-card">
-						<div class="sj-card-head"><span>Ramais</span><i class="fas fa-headset"></i></div>
-		<div class="sj-stats"><div class="sj-stat green"><strong><?= $registered_count === null ? '—' : $registered_count ?></strong><span>online</span></div><div class="sj-stat orange"><strong><?= $offline_count === null ? '—' : $offline_count ?></strong><span>offline</span></div></div>
-		<div class="sj-ext-bar"><span style="width:<?= $total_extensions && $registered_count !== null ? round(($registered_count / $total_extensions) * 100) : 0 ?>%"></span></div>
-						<div class="sj-ext-note"><?= $total_extensions ?> ramais visíveis para este usuário</div>
-					</section>
-					<section class="sj-card">
-						<div class="sj-card-head"><span>Chamadas ativas</span><i class="fas fa-phone-volume"></i></div>
-						<div class="sj-stats"><div class="sj-stat purple"><strong><?= $busy_count ?></strong><span>ramais em ligação agora</span></div></div>
-						<?php $shown_calls = 0; foreach ($extensions as $extension): $number = (string) $extension['extension']; if (!isset($active_calls[$number])) { continue; } $shown_calls++; ?>
-						<div class="sj-live-call"><span><i class="fas fa-phone"></i> Ramal <?= $e($number) ?><?= !empty($active_calls[$number]['caller']) ? ' → '.$e($active_calls[$number]['caller']) : '' ?></span><small>em andamento</small></div>
-						<?php endforeach; if ($shown_calls === 0): ?><div class="sj-ext-note">Nenhuma chamada ativa nos ramais visíveis.</div><?php endif; ?>
-					</section>
-					<section class="sj-card wide">
-						<div class="sj-card-head"><span>Ligações perdidas</span><span style="font-weight:400;color:#737a80"><?= $missed_count ?> nas últimas 24 horas</span></div>
-						<div class="sj-missed-list">
-						<?php if (empty($recent_missed_calls)): ?><div class="sj-ext-note">Nenhuma ligação perdida no período.</div><?php endif; ?>
+				<div class="sj-faixa">
+					<div class="cel">
+						<div class="k">Ligações recebidas</div>
+						<div class="v"><?= number_format($total_calls, 0, ',', '.') ?></div>
+						<div class="c">nas últimas 24 horas</div>
+					</div>
+					<div class="cel">
+						<div class="k">Perdidas</div>
+						<div class="v <?= $missed_count > 0 ? '' : 'ok' ?>"><?= $missed_count ?></div>
+						<div class="c"><?= $missed_count > 0 ? 'ficaram sem resposta' : 'ninguém ficou sem resposta' ?></div>
+					</div>
+					<div class="cel">
+						<div class="k">Ramais</div>
+						<?php if ($registered_count === null): ?>
+							<?php /* Antes saiam dois travessoes coloridos aqui, certos no codigo
+							      e com cara de tela quebrada. */ ?>
+							<div class="v vazio">estado indisponível</div>
+							<div class="c"><?= $total_extensions ?> <?= $total_extensions == 1 ? 'ramal visível' : 'ramais visíveis' ?> para você</div>
+						<?php else: ?>
+							<div class="v <?= $registered_count > 0 ? 'ok' : 'idle' ?>"><?= $registered_count ?><span style="color:#9aa1a8;font-size:15px;font-weight:500"> / <?= $total_extensions ?></span></div>
+							<div class="c"><?= $registered_count == 1 ? 'ramal online' : 'ramais online' ?></div>
+						<?php endif; ?>
+					</div>
+					<div class="cel">
+						<div class="k">Em ligação agora</div>
+						<div class="v <?= $busy_count > 0 ? '' : 'idle' ?>"><?= $busy_count ?></div>
+						<div class="c"><?= $busy_count > 0 ? 'ramais ocupados' : 'nenhuma chamada ativa' ?></div>
+					</div>
+				</div>
+				<section class="sj-chart-card" style="margin-top:0">
+					<div class="sj-card-head"><span>Ligações perdidas</span><span class="sj-muted">últimas 24 horas</span></div>
+					<?php if (empty($recent_missed_calls)): ?>
+						<div class="sj-vazio">Nenhuma ligação perdida no período.
+							<a class="sj-link" href="?view=calls&amp;status=missed&amp;days=1" style="margin-left:6px">Ver histórico</a></div>
+					<?php else: ?>
+						<div class="sj-missed-list" style="padding:4px 16px 12px">
 						<?php foreach ($recent_missed_calls as $call): ?>
 						<div class="sj-missed"><strong><?= $e($call['caller_id_number'] ?: $call['caller_id_name'] ?: 'Número indisponível') ?></strong><span>Ligou para <?= $e($call['caller_destination'] ?: $call['destination_number'] ?: '—') ?></span><time><?= $e($display_time($call['start_stamp'])) ?></time><span class="sj-badge missed">Perdida</span></div>
 						<?php endforeach; ?>
-						</div>
 						<div style="display:flex;justify-content:flex-end;margin-top:5px"><a class="sj-link" href="?view=calls&amp;status=missed&amp;days=1">Ver histórico de ligações</a></div>
-					</section>
-				</div>
+						</div>
+					<?php endif; ?>
+				</section>
 				<section class="sj-chart-card">
 					<div class="sj-card-head"><span>Volume de chamadas</span><span class="sj-muted">pico de <?= $maximo_volume ?> <?= $maximo_volume == 1 ? 'ligação' : 'ligações' ?> em uma hora · últimas 24 horas</span></div>
 					<?php /* Grade em 18/51/84 porque e onde ficam o pico, a metade e o zero
@@ -240,16 +355,18 @@ $display_time = static function ($value) use ($timezone): string {
 				<div class="sj-toolbar"><span class="sj-muted">Mapa de disponibilidade dos ramais</span><span class="sj-muted">Atualizado ao abrir a tela</span></div>
 				<div class="sj-ext-summary">
 					<div class="sj-ext-stat"><span>Total de ramais visíveis</span><strong><?= $total_extensions ?></strong></div>
-					<div class="sj-ext-stat available"><span>Disponíveis</span><strong><?= $available_count === null ? '—' : $available_count ?></strong></div>
+					<?php /* Travessao solto parece tela quebrada. Quando o servidor SIP nao
+					         respondeu, a tela diz isso em palavra -- igual na Visao geral. */ ?>
+					<div class="sj-ext-stat available"><span>Disponíveis</span><?= $available_count === null ? '<strong style="font-size:14px;color:#9aa1a8">não consultado</strong>' : '<strong>'.$available_count.'</strong>' ?></div>
 					<div class="sj-ext-stat busy"><span>Em ligação</span><strong><?= $busy_count ?></strong></div>
-					<div class="sj-ext-stat offline"><span>Offline</span><strong><?= $offline_count === null ? '—' : $offline_count ?></strong></div>
+					<div class="sj-ext-stat offline"><span>Offline</span><?= $offline_count === null ? '<strong style="font-size:14px;color:#9aa1a8">não consultado</strong>' : '<strong>'.$offline_count.'</strong>' ?></div>
 				</div>
 				<div class="sj-ext-controls">
 					<div class="sj-ext-filters" role="group" aria-label="Filtrar ramais">
 						<button class="sj-ext-filter active" type="button" data-extension-filter="all">Todos (<?= $total_extensions ?>)</button>
-						<button class="sj-ext-filter" type="button" data-extension-filter="available">Disponíveis (<?= $available_count === null ? '—' : $available_count ?>)</button>
+						<button class="sj-ext-filter" type="button" data-extension-filter="available">Disponíveis<?= $available_count === null ? '' : ' ('.$available_count.')' ?></button>
 						<button class="sj-ext-filter" type="button" data-extension-filter="busy">Em ligação (<?= $busy_count ?>)</button>
-						<button class="sj-ext-filter" type="button" data-extension-filter="offline">Offline (<?= $offline_count === null ? '—' : $offline_count ?>)</button>
+						<button class="sj-ext-filter" type="button" data-extension-filter="offline">Offline<?= $offline_count === null ? '' : ' ('.$offline_count.')' ?></button>
 					</div>
 					<label class="sj-search"><i class="fas fa-magnifying-glass"></i><input id="extensionSearch" type="search" placeholder="Buscar ramal ou pessoa" aria-label="Buscar ramal ou pessoa"></label>
 				</div>
@@ -273,36 +390,67 @@ $display_time = static function ($value) use ($timezone): string {
 
 			<?php elseif ($view === 'ratings'): ?>
 				<div class="sj-action"><span class="sj-title">Avaliações</span></div>
-				<div class="sj-toolbar"><span class="sj-muted">Nota que o cliente digitou no fim da ligação · últimos 30 dias</span><span class="sj-muted"><?= (int) $rating_summary['respostas'] ?> respostas</span></div>
-				<div class="sj-grid">
-					<section class="sj-card">
-						<div class="sj-card-head"><span>Nota média</span><i class="fas fa-star"></i></div>
-						<div class="sj-stats"><div class="sj-stat green"><strong><?= $rating_summary['media'] === null ? '—' : $e(number_format((float) $rating_summary['media'], 2, ',', '')) ?></strong><span>de 5</span></div><div class="sj-stat purple"><strong><?= $rating_rate === null ? '—' : $rating_rate.'%' ?></strong><span>responderam</span></div></div>
-						<div class="sj-ext-note">Ligação atendida em que o cliente não digitou nada não entra na média.</div>
-					</section>
-					<section class="sj-card">
-						<div class="sj-card-head"><span>Por pergunta</span><i class="fas fa-circle-question"></i></div>
-						<?php if (empty($rating_by_question)): ?><div class="sj-ext-note">Nenhuma avaliação no período.</div><?php endif; ?>
-						<?php foreach ($rating_by_question as $pergunta): ?>
-						<div class="sj-missed"><strong><?= $e((string) $pergunta['pergunta']) ?></strong><span><?= (int) $pergunta['respostas'] ?> resposta(s)</span><span class="sj-badge <?= (float) $pergunta['media'] >= 4 ? 'answered' : ((float) $pergunta['media'] < 3 ? 'missed' : '') ?>"><?= $e(number_format((float) $pergunta['media'], 2, ',', '')) ?></span></div>
+				<div class="sj-toolbar"><span class="sj-muted">Nota que quem ligou digitou no fim do atendimento · últimos 30 dias</span><span class="sj-muted"><?= (int) $rating_summary['respostas'] ?> <?= (int) $rating_summary['respostas'] == 1 ? 'resposta' : 'respostas' ?></span></div>
+				<?php
+					// A nota e o assunto da tela; a taxa de resposta e contexto dela.
+					// Antes as duas tinham o mesmo peso e competiam.
+					$media = $rating_summary['media'] === null ? null : (float) $rating_summary['media'];
+					$classe_media = $media === null ? '' : ($media >= 4 ? 'ok' : ($media < 3 ? 'bad' : 'mid'));
+					$cheias = $media === null ? 0 : (int) round($media);
+					$por_nota = [];
+					foreach ($rating_distribution as $faixa) { $por_nota[(int) $faixa['nota']] = (int) $faixa['total']; }
+					$maior_nota = $por_nota ? max($por_nota) : 0;
+				?>
+				<div class="sj-nota-topo">
+					<div class="sj-nota">
+						<div class="k">Nota média</div>
+						<div class="v"><b class="sj-med <?= $classe_media ?>"><?= $media === null ? '—' : $e(number_format($media, 2, ',', '')) ?></b><i>de 5</i></div>
+						<div class="sj-estrelas"><?= str_repeat('★', $cheias) ?><span><?= str_repeat('★', 5 - $cheias) ?></span></div>
+						<div class="c">
+							<b style="color:var(--sj-ink)"><?= (int) $rating_summary['respostas'] ?></b>
+							<?= $answered_calls > 0 ? 'de '.(int) $answered_calls.' atendimentos avaliados' : 'avaliações no período' ?><br>
+							<span style="color:#8a9097">quem desligou sem digitar não entra na média</span>
+						</div>
+					</div>
+					<div class="sj-dist">
+						<div class="k">Distribuição das notas</div>
+						<?php foreach ([5, 4, 3, 2, 1] as $n): $qt = $por_nota[$n] ?? 0; ?>
+						<div class="lin <?= $qt === 0 ? 'zero' : '' ?>">
+							<em>★ <?= $n ?></em>
+							<div class="bar"><span style="width:<?= $maior_nota > 0 ? round(($qt / $maior_nota) * 100) : 0 ?>%;background:<?= $n >= 4 ? 'var(--sj-green)' : ($n == 3 ? '#c9a227' : ($n == 2 ? '#c47a3c' : 'var(--sj-red)')) ?>"></span></div>
+							<b><?= $qt ?></b>
+						</div>
 						<?php endforeach; ?>
-					</section>
-					<section class="sj-card">
-						<div class="sj-card-head"><span>Distribuição</span><i class="fas fa-chart-simple"></i></div>
-						<?php if (empty($rating_distribution)): ?><div class="sj-ext-note">Nenhuma avaliação no período.</div><?php else: $maior_nota = max(array_map('intval', array_column($rating_distribution, 'total'))); ?>
-						<?php foreach ($rating_distribution as $faixa): ?>
-						<div class="sj-ext-note">Nota <?= (int) $faixa['nota'] ?> · <?= (int) $faixa['total'] ?></div>
-						<div class="sj-ext-bar"><span style="width:<?= $maior_nota > 0 ? round(((int) $faixa['total'] / $maior_nota) * 100) : 0 ?>%"></span></div>
-						<?php endforeach; endif; ?>
-					</section>
-					<section class="sj-card wide">
-						<div class="sj-card-head"><span>Por atendente</span><span style="font-weight:400;color:#737a80">menor nota primeiro</span></div>
-						<?php if (empty($rating_by_extension)): ?><div class="sj-ext-note">Nenhuma avaliação no período.</div><?php endif; ?>
-						<?php foreach ($rating_by_extension as $linha): ?>
-						<div class="sj-missed"><strong>Ramal <?= $e((string) $linha['ramal']) ?></strong><span><?= (int) $linha['respostas'] ?> resposta(s)</span><span class="sj-badge <?= (float) $linha['media'] >= 4 ? 'answered' : ((float) $linha['media'] < 3 ? 'missed' : '') ?>"><?= $e(number_format((float) $linha['media'], 2, ',', '')) ?></span></div>
-						<?php endforeach; ?>
-					</section>
+					</div>
 				</div>
+
+				<section class="sj-chart-card" style="margin-top:0">
+					<div class="sj-card-head"><span>Por pergunta</span><span class="sj-muted">média de cada pergunta da pesquisa</span></div>
+					<?php if (empty($rating_by_question)): ?><div class="sj-vazio">Nenhuma avaliação no período.</div><?php else: ?>
+					<div class="sj-table-wrap" style="border:0;border-radius:0"><table class="sj-table" style="min-width:0">
+						<thead><tr><th>Pergunta</th><th class="r" style="width:120px">Respostas</th><th class="r" style="width:100px">Média</th></tr></thead>
+						<tbody>
+						<?php foreach ($rating_by_question as $pergunta): $m = (float) $pergunta['media']; ?>
+						<tr><td><?= $e((string) $pergunta['pergunta']) ?></td><td class="r"><?= (int) $pergunta['respostas'] ?></td>
+							<td class="r sj-med <?= $m >= 4 ? 'ok' : ($m < 3 ? 'bad' : 'mid') ?>"><?= $e(number_format($m, 2, ',', '')) ?></td></tr>
+						<?php endforeach; ?>
+						</tbody></table></div>
+					<?php endif; ?>
+				</section>
+
+				<section class="sj-chart-card">
+					<div class="sj-card-head"><span>Por atendente</span><span class="sj-muted">menor nota primeiro</span></div>
+					<?php if (empty($rating_by_extension)): ?><div class="sj-vazio">Nenhuma avaliação no período.</div><?php else: ?>
+					<div class="sj-table-wrap" style="border:0;border-radius:0"><table class="sj-table" style="min-width:0">
+						<thead><tr><th>Ramal</th><th class="r" style="width:120px">Respostas</th><th class="r" style="width:100px">Média</th></tr></thead>
+						<tbody>
+						<?php foreach ($rating_by_extension as $linha): $m = (float) $linha['media']; ?>
+						<tr><td><strong><?= $e((string) $linha['ramal']) ?></strong></td><td class="r"><?= (int) $linha['respostas'] ?></td>
+							<td class="r sj-med <?= $m >= 4 ? 'ok' : ($m < 3 ? 'bad' : 'mid') ?>"><?= $e(number_format($m, 2, ',', '')) ?></td></tr>
+						<?php endforeach; ?>
+						</tbody></table></div>
+					<?php endif; ?>
+				</section>
 				<form class="sj-table-tools" method="get">
 					<input type="hidden" name="view" value="ratings">
 					<label class="sj-search"><i class="fas fa-magnifying-glass"></i><input type="search" name="search" value="<?= $e($history_search) ?>" placeholder="Buscar número ou ramal" aria-label="Buscar número ou ramal"></label>
